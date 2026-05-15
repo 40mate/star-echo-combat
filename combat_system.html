@@ -158,7 +158,7 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
 
 <div class="header">
   <h1>별의 잔향 — 전투 시스템</h1>
-  <div class="meta">COMBAT SYSTEM REFERENCE</div>
+  <div class="meta">COMBAT SYSTEM REFERENCE · 리밸런스 v2 기준</div>
 </div>
 
 <div class="tab-nav">
@@ -325,16 +325,16 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
       <div class="card">
         <div class="card-title blue">종료 조건 &amp; 결과</div>
         <ul class="rule-list">
-          <li>종료 조건: <strong>한쪽 진영 전멸만</strong></li>
+          <li>웨이브 내 적 진영 전멸 → 다음 웨이브 진행. <strong>마지막 웨이브 클리어 시 챕터 완료.</strong></li>
           <li>부활 스킬: 미기획 <em>(필요 시 추가 가능)</em></li>
-          <li>전투 종료 시 <strong>HP / 쿨타임 전부 회복</strong> — 매 전투는 독립적</li>
+          <li>챕터 완료 시 <strong>HP / 쿨타임 전부 회복</strong> — 챕터 단위로 독립적</li>
           <li>패배 페널티 없음. 패배 시 <strong>일상 페이즈로 복귀</strong>, 클리어 전까지 스토리 미진행</li>
         </ul>
       </div>
       <div class="card">
         <div class="card-title gold">구조 &amp; UX</div>
         <ul class="rule-list">
-          <li><strong>24챕터 × 챕터당 1전투</strong> 구조, 회차 반복 시 재플레이</li>
+          <li><strong>24챕터 × 챕터당 1~N웨이브</strong> 구조, 회차 반복 시 재플레이</li>
           <li>UX: <strong>배속 O</strong>, 스킵 X, 자동전투 X</li>
           <li>전투 진입 전 편성 UI 매번 노출 <em>(마지막 설정 유지)</em></li>
         </ul>
@@ -342,9 +342,40 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
     </div>
   </div>
 
-  <!-- 1.9 효과/상태이상 -->
+  <!-- 1.9 웨이브 시스템 -->
   <div class="section">
-    <div class="section-title"><span class="section-num">1.9</span>효과 / 상태이상</div>
+    <div class="section-title"><span class="section-num">1.9</span>웨이브 시스템</div>
+    <div class="card">
+      <div class="card-title gold">구조</div>
+      <ul class="rule-list">
+        <li>1챕터는 <strong>1개 이상의 웨이브</strong>로 구성. 웨이브 수는 <strong>챕터별 데이터로 개별 설정</strong>.</li>
+        <li>각 웨이브는 <strong>독립된 적 덱 데이터</strong>를 가진다 — 웨이브마다 적 종류·수·배치 개별 설정 가능.</li>
+        <li>현재 웨이브 적 전멸 시 <strong>자동으로 다음 웨이브 시작</strong> <em>(전환 확인 버튼 없음)</em>.</li>
+        <li><strong>패배 시</strong> 1웨이브부터 재시작. 편성 화면을 다시 거친다.</li>
+      </ul>
+    </div>
+    <div class="card" style="margin-top:0;">
+      <div class="card-title blue">웨이브 간 아군 상태 유지 규칙</div>
+      <table class="sys-table">
+        <thead><tr><th>항목</th><th>웨이브 간 처리</th></tr></thead>
+        <tbody>
+          <tr><td class="hi">HP</td><td><strong>유지</strong> — 회복 없음</td></tr>
+          <tr><td class="hi">사망 캐릭터</td><td><strong>유지</strong> — 부활 없음</td></tr>
+          <tr><td class="hi">스킬 쿨타임</td><td><strong>유지</strong> — 초기화 없음</td></tr>
+          <tr><td class="hi">덱 편성</td><td><strong>변경 불가</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="key-points">
+      <div class="key-chip">스킬을 아낄 것인가, 초반에 쏟아부을 것인가</div>
+      <div class="key-chip">힐러 스킬 타이밍이 챕터 전체에 영향</div>
+      <div class="key-chip">사망 캐릭터 누적 → 후반 웨이브 전력 저하</div>
+    </div>
+  </div>
+
+  <!-- 1.10 효과/상태이상 -->
+  <div class="section">
+    <div class="section-title"><span class="section-num">1.10</span>효과 / 상태이상</div>
     <div class="card">
       <ul class="rule-list">
         <li><strong>도트(지속 피해)는 중첩 가능.</strong> 동일 시전자·속성·스킬 여부 무관, 각각 독립 누적.</li>
@@ -358,7 +389,7 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
 
   <!-- 1.10 플레이어 의사결정 -->
   <div class="section">
-    <div class="section-title"><span class="section-num">1.10</span>플레이어 의사결정 구조</div>
+    <div class="section-title"><span class="section-num">1.11</span>플레이어 의사결정 구조</div>
     <div class="col2">
       <div class="decision-box">
         <h4 class="player">▶ 플레이어 직접 결정</h4>
