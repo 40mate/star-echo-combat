@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>별의 잔향 — 전투 시스템 구현 스펙</title>
+<title>별의 잔향 — 전투 시스템 기획서</title>
 
 <!-- ===== FONTS: Pretendard(한글) + JetBrains Mono(코드/HUD) ===== -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
@@ -136,6 +136,10 @@ pre.code .c{color:var(--dim)} pre.code .m{color:var(--mint)} pre.code .b{color:v
 .step .t b{color:var(--mint)}
 .step .t .wn{color:var(--warn)}
 
+/* Phase 첫 슬라이드의 기획 의도 한 줄 */
+.lead{position:absolute;top:198px;left:88px;right:88px;font-size:18px;line-height:1.4;color:var(--dim);z-index:2}
+.lead b{color:var(--mint);font-weight:600}
+
 /* reveal 애니메이션 */
 .reveal{opacity:0;transform:translateY(26px);transition:opacity .6s var(--ease),transform .6s var(--ease)}
 .slide.visible .reveal{opacity:1;transform:none}
@@ -218,8 +222,8 @@ body.editing .slide.active [data-edit]{outline:1px dashed rgba(63,224,181,.5);ou
   <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
   <div class="cover-head">
     <div>
-      <div class="cover-tag">STAR-ECHO :: COMBAT SYSTEM SPEC</div>
-      <h1>별의 잔향 — <em>전투 시스템</em> 구현 스펙</h1>
+      <div class="cover-tag">STAR-ECHO :: COMBAT SYSTEM DESIGN</div>
+      <h1>별의 잔향 — <em>전투 시스템</em> 기획서</h1>
     </div>
     <div class="meta">진형 기반 커맨드 턴제 · 완전 수동 전투<br>PHASE <b>01 – 12</b> · REV <b id="covRev">—</b></div>
   </div>
@@ -291,6 +295,7 @@ body.editing .slide.active [data-edit]{outline:1px dashed rgba(63,224,181,.5);ou
 <section class="slide" data-id="p1-1" data-phase="PHASE 1 · 기반 런타임" data-title="RNG 시드 스트림">
   <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
   <header class="shead"><div><span class="ptag">PHASE 1 · 기반 런타임</span><h2>1. RNG 시드 스트림</h2></div><span class="sno">P1-1</span></header>
+  <p class="lead"><b>같은 입력이면 같은 결과</b> — 리플레이·시뮬레이션·연출이 전부 이 토대 위에서 파생된다.</p>
   <div class="body">
     <div class="cols c12">
       <div class="panel reveal">
@@ -360,6 +365,7 @@ body.editing .slide.active [data-edit]{outline:1px dashed rgba(63,224,181,.5);ou
 <section class="slide" data-id="p2-1" data-phase="PHASE 2 · 데이터 스키마" data-title="스탯">
   <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
   <header class="shead"><div><span class="ptag">PHASE 2 · 데이터 스키마</span><h2>1. 스탯</h2></div><span class="sno">P2-1</span></header>
+  <p class="lead"><b>스킬을 코드가 아니라 데이터로</b> — 캐릭터 추가는 기획자의 조립 작업이어야 콘텐츠 속도가 유지된다.</p>
   <div class="body">
     <div class="cols c2">
       <div class="panel reveal">
@@ -826,6 +832,7 @@ body.editing .slide.active [data-edit]{outline:1px dashed rgba(63,224,181,.5);ou
 <section class="slide" data-id="p3-1" data-phase="PHASE 3 · 전투 상태 & 그리드" data-title="그리드 & 초기화">
   <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
   <header class="shead"><div><span class="ptag">PHASE 3 · 전투 상태 &amp; 그리드</span><h2>1. 그리드 &amp; 전투 초기화</h2></div><span class="sno">P3-1</span></header>
+  <p class="lead"><b>위치가 곧 역할</b> — 2×3 진형이 전투의 공간 언어이고, 무너진 진형 자체가 리스크다.</p>
   <div class="body">
     <div class="cols c12">
       <div class="panel reveal">
@@ -920,6 +927,7 @@ Slot = { row: FRONT|BACK, col: 1~3 }</pre>
 <section class="slide" data-id="p4-1" data-phase="PHASE 4 · 턴 엔진" data-title="정렬 & 동률 처리">
   <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
   <header class="shead"><div><span class="ptag">PHASE 4 · 턴 엔진</span><h2>1. 행동 속도 정렬 &amp; 동률 처리</h2></div><span class="sno">P4-1</span></header>
+  <p class="lead"><b>턴 순서는 시간 자원</b> — 속도 조작이 전략 축, 라운드당 1회 불변식이 공정성을 보장한다.</p>
   <div class="body">
     <div class="cols c12">
       <div class="panel reveal">
@@ -1023,6 +1031,7 @@ Slot = { row: FRONT|BACK, col: 1~3 }</pre>
 <section class="slide" data-id="p5-1" data-phase="PHASE 5 · 타겟팅" data-title="TargetScope">
   <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
   <header class="shead"><div><span class="ptag">PHASE 5 · 타겟팅</span><h2>1. TargetScope</h2></div><span class="sno">P5-1</span></header>
+  <p class="lead"><b>"누구를 때릴 것인가"가 매 턴의 의사결정</b> — 앞열 규칙이 진형 가치를, 도발·저격이 심리전을 만든다.</p>
   <div class="body">
     <div class="cols c2">
       <div class="panel reveal">
@@ -1168,6 +1177,7 @@ Slot = { row: FRONT|BACK, col: 1~3 }</pre>
 <section class="slide" data-id="p6-1" data-phase="PHASE 6 · 스킬 선택 & 쿨타임" data-title="발동 판정 & 선택 주체">
   <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
   <header class="shead"><div><span class="ptag">PHASE 6 · 스킬 선택 &amp; 쿨타임</span><h2>1. 발동 가능 판정 &amp; 선택 주체</h2></div><span class="sno">P6-1</span></header>
+  <p class="lead"><b>아군 스킬 선택은 온전히 플레이어의 몫</b> — 쿨타임이 "언제 아낄 것인가"의 리듬을 만든다.</p>
   <div class="body">
     <div class="cols c2">
       <div class="panel reveal">
@@ -1242,6 +1252,7 @@ Slot = { row: FRONT|BACK, col: 1~3 }</pre>
 <section class="slide" data-id="p7-1" data-phase="PHASE 7 · 효과 & 데미지" data-title="정산 순서(단일)">
   <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
   <header class="shead"><div><span class="ptag">PHASE 7 · 효과 &amp; 데미지</span><h2>1. 단일 DAMAGE 정산 순서</h2></div><span class="sno">P7-1</span></header>
+  <p class="lead"><b>한 대의 피해가 만들어지는 서사</b> — 순서가 고정되어야 플레이어가 피해량을 예측·역산할 수 있다.</p>
   <div class="body">
     <div class="cols c12">
       <div class="panel reveal">
@@ -1427,6 +1438,7 @@ Slot = { row: FRONT|BACK, col: 1~3 }</pre>
 <section class="slide" data-id="p8-1" data-phase="PHASE 8 · 몬스터 AI" data-title="스킬 선택 & 타겟 정책">
   <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
   <header class="shead"><div><span class="ptag">PHASE 8 · 몬스터 AI</span><h2>1. 스킬 선택 &amp; 타겟 정책</h2></div><span class="sno">P8-1</span></header>
+  <p class="lead"><b>몬스터는 "읽을 수 있는 위협"</b> — 정책 기반 패턴 학습의 재미 + 정보 비공개의 추론 게임.</p>
   <div class="body">
     <div class="cols c12">
       <div class="panel reveal">
@@ -1481,6 +1493,7 @@ Slot = { row: FRONT|BACK, col: 1~3 }</pre>
 <section class="slide" data-id="p9-1" data-phase="PHASE 9 · 웨이브 & 챕터" data-title="전투 단위">
   <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
   <header class="shead"><div><span class="ptag">PHASE 9 · 웨이브 &amp; 챕터</span><h2>1. 전투 단위 <b>— 챕터 진입 → 클리어/패배</b></h2></div><span class="sno">P9-1</span></header>
+  <p class="lead"><b>HP·쿨을 이어가는 웨이브 연전</b> — 이번 웨이브에서 낭비한 스킬은 다음 웨이브의 빚이 된다.</p>
   <div class="body">
     <div class="panel reveal" style="height:100%">
       <h3>경계 규칙</h3>
@@ -1554,6 +1567,7 @@ Slot = { row: FRONT|BACK, col: 1~3 }</pre>
 <section class="slide" data-id="p10-1" data-phase="PHASE 10 · 전투 종료 판정" data-title="전멸 감지 & 결과">
   <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
   <header class="shead"><div><span class="ptag">PHASE 10 · 전투 종료 판정</span><h2>1. 전멸 감지 &amp; 결과 처리</h2></div><span class="sno">P10-1</span></header>
+  <p class="lead"><b>승패 확정의 순간을 규칙으로 못 박는다</b> — "이겼는데 진" 억울함 방지.</p>
   <div class="body">
     <div class="cols c2">
       <div class="panel reveal">
@@ -1581,6 +1595,7 @@ Slot = { row: FRONT|BACK, col: 1~3 }</pre>
 <section class="slide" data-id="p11-1" data-phase="PHASE 11 · 시뮬레이터" data-title="헤드리스 & 로그">
   <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
   <header class="shead"><div><span class="ptag">PHASE 11 · 시뮬레이터</span><h2>1. 헤드리스 실행 &amp; 로그 <b>— Phase 12(UI)보다 먼저</b></h2></div><span class="sno">P11-1</span></header>
+  <p class="lead"><b>밸런싱은 감이 아니라 통계로</b> — 수천 판 승률 곡선이 수치 조정의 근거다.</p>
   <div class="body">
     <div class="cols c2">
       <div class="panel reveal">
@@ -1634,6 +1649,7 @@ Slot = { row: FRONT|BACK, col: 1~3 }</pre>
 <section class="slide" data-id="p12-1" data-phase="PHASE 12 · UI/UX" data-title="편성 · 전투 화면 · 타겟">
   <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
   <header class="shead"><div><span class="ptag">PHASE 12 · UI/UX</span><h2>1. 편성 · 전투 화면 · 타겟 선택</h2></div><span class="sno">P12-1</span></header>
+  <p class="lead"><b>"보는" 전투</b> — 배속은 허용, 스킵은 없다. 매 턴의 선택과 연출이 곧 콘텐츠다.</p>
   <div class="body">
     <div class="cols c3">
       <div class="panel reveal">
@@ -1715,6 +1731,7 @@ Slot = { row: FRONT|BACK, col: 1~3 }</pre>
    개정 이력 — 스펙이 바뀌면 여기에 행 추가 (최신이 위)
    ============================================================ */
 const REVISIONS = [
+  { date:'2026-07-02', ver:'v1.1', scope:'전체', note:'기획서로 재구성 — Phase별 기획 의도 서술 보강, 구현 순서 Phase 단위 통일, 마우스 휠 이동 추가' },
   { date:'2026-07-02', ver:'v1.0', scope:'전체', note:'초판 작성 — Phase 1~12 전체 스펙 슬라이드화' },
 ];
 
