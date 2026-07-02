@@ -1,0 +1,1914 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>별의 잔향 — 전투 시스템 구현 스펙</title>
+
+<!-- ===== FONTS: Pretendard(한글) + JetBrains Mono(코드/HUD) ===== -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
+
+<style>
+/* ===========================================
+   THEME — 블루프린트 터미널
+   색·서체를 바꾸려면 여기만 수정
+   =========================================== */
+:root{
+  --bg:#0A111F;            /* 슬라이드 배경 */
+  --panel:#0F1A2E;         /* 패널 배경 */
+  --panel2:#122036;        /* 패널 강조 배경 */
+  --line:#1D2E4A;          /* 보더 */
+  --mint:#3FE0B5;          /* 주 액센트 */
+  --blue:#6FA8FF;          /* 보조 액센트 */
+  --warn:#FFB454;          /* 경고/예외 강조 */
+  --pink:#FF7A9E;          /* 금지/차단 강조 */
+  --text:#DCE6F5;          /* 본문 */
+  --dim:#5F7398;           /* 보조 텍스트 */
+  --stage-bg:#050912;      /* 레터박스 배경 */
+  --slide-bg:#0A111F;
+  --font-body:'Pretendard Variable',Pretendard,sans-serif;
+  --font-mono:'JetBrains Mono',monospace;
+  --ease:cubic-bezier(.16,1,.3,1);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+
+/* ===========================================
+   FIXED 16:9 STAGE: MANDATORY BASE STYLES (viewport-base.css 전문)
+   =========================================== */
+html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--stage-bg,#000)}
+.deck-viewport{position:fixed;inset:0;overflow:hidden;background:var(--stage-bg,#000)}
+.deck-stage{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:hidden;transform-origin:0 0;background:var(--slide-bg,#fff)}
+.slide{position:absolute;inset:0;width:1920px;height:1080px;overflow:hidden;display:block;visibility:hidden;opacity:0;pointer-events:none;background:var(--slide-bg,#fff)}
+.slide.active,.slide.visible{visibility:visible;opacity:1;pointer-events:auto;z-index:1}
+img,video,canvas,svg{max-width:100%;max-height:100%}
+.deck-controls{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:1000}
+@media print{
+  html,body{width:1920px;height:auto;overflow:visible;background:#fff}
+  .deck-viewport{position:static;overflow:visible;background:#fff}
+  .deck-stage{position:static;width:auto;height:auto;transform:none!important;background:none}
+  .slide{position:relative;display:block!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;width:1920px;height:1080px;break-after:page;page-break-after:always}
+  .slide:last-child{break-after:auto;page-break-after:auto}
+  .deck-controls{display:none!important}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.2s!important}
+}
+
+/* ===========================================
+   SLIDE 공통 골격 — 블루프린트 그리드 + HUD 코너
+   =========================================== */
+body{font-family:var(--font-body);color:var(--text)}
+.slide{background:var(--bg)}
+.slide::before{ /* 블루프린트 격자 */
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background-image:linear-gradient(rgba(111,168,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(111,168,255,.06) 1px,transparent 1px);
+  background-size:64px 64px;
+}
+.slide::after{ /* HUD 외곽선 */
+  content:'';position:absolute;inset:28px;pointer-events:none;border:1px solid var(--line);
+}
+.corner{position:absolute;width:26px;height:26px;border:2px solid var(--mint);z-index:2;pointer-events:none}
+.corner.c1{top:22px;left:22px;border-right:none;border-bottom:none}
+.corner.c2{top:22px;right:22px;border-left:none;border-bottom:none}
+.corner.c3{bottom:22px;left:22px;border-right:none;border-top:none}
+.corner.c4{bottom:22px;right:22px;border-left:none;border-top:none}
+
+/* 슬라이드 헤더 */
+.shead{position:absolute;top:64px;left:88px;right:88px;display:flex;align-items:baseline;justify-content:space-between;border-bottom:2px solid var(--line);padding-bottom:26px}
+.shead .ptag{font-family:var(--font-mono);font-size:21px;letter-spacing:.18em;color:var(--mint);display:block;margin-bottom:14px}
+.shead h2{font-size:54px;font-weight:800;letter-spacing:-.01em}
+.shead h2 b{color:var(--mint);font-weight:800}
+.shead .sno{font-family:var(--font-mono);font-size:22px;color:var(--dim)}
+/* 본문 영역 */
+.body{position:absolute;top:230px;left:88px;right:88px;bottom:80px}
+.cols{display:grid;gap:28px;height:100%}
+.cols.c2{grid-template-columns:1fr 1fr}
+.cols.c3{grid-template-columns:1fr 1fr 1fr}
+.cols.c21{grid-template-columns:1.25fr 1fr}
+.cols.c12{grid-template-columns:1fr 1.25fr}
+
+/* 패널 */
+.panel{border:1px solid var(--line);background:linear-gradient(180deg,rgba(29,46,74,.35),rgba(15,26,46,.6));padding:30px 34px;min-height:0}
+.panel h3{font-family:var(--font-mono);font-size:22px;color:var(--blue);letter-spacing:.12em;margin-bottom:20px}
+.panel h3 .m{color:var(--mint)}
+.panel.hot{border-color:rgba(63,224,181,.45)}
+.panel.warn{border-color:rgba(255,180,84,.45)}
+.panel.warn h3{color:var(--warn)}
+
+/* 리스트/텍스트 */
+ul.ls{list-style:none}
+ul.ls li{position:relative;padding-left:30px;font-size:23px;line-height:1.55;margin-bottom:14px;color:var(--text)}
+ul.ls li::before{content:'▸';position:absolute;left:2px;color:var(--mint)}
+ul.ls li b{color:var(--mint);font-weight:700}
+ul.ls li .bl{color:var(--blue);font-weight:600}
+ul.ls li .wn{color:var(--warn);font-weight:600}
+ul.ls li .pk{color:var(--pink);font-weight:600}
+ul.ls.sm li{font-size:20px;margin-bottom:10px;line-height:1.5}
+.note{font-size:20px;color:var(--dim);line-height:1.55;margin-top:16px}
+code,.k{font-family:var(--font-mono);font-size:.92em;color:var(--mint);background:rgba(63,224,181,.08);padding:2px 8px;border:1px solid rgba(63,224,181,.2)}
+.k.b{color:var(--blue);background:rgba(111,168,255,.08);border-color:rgba(111,168,255,.25)}
+.k.w{color:var(--warn);background:rgba(255,180,84,.08);border-color:rgba(255,180,84,.25)}
+
+/* 표 */
+table.tbl{width:100%;border-collapse:collapse;font-size:20px}
+table.tbl th{font-family:var(--font-mono);font-size:17px;letter-spacing:.08em;color:var(--blue);text-align:left;border-bottom:2px solid var(--line);padding:10px 14px;white-space:nowrap}
+table.tbl td{border-bottom:1px solid var(--line);padding:11px 14px;line-height:1.45;vertical-align:top}
+table.tbl td:first-child{font-family:var(--font-mono);color:var(--mint);white-space:nowrap;font-size:18px}
+table.tbl tr:last-child td{border-bottom:none}
+table.tbl.xs{font-size:17.5px}
+table.tbl.xs td{padding:8px 12px}
+table.tbl.xs td:first-child{font-size:16px}
+table.tbl td b{color:var(--mint)}
+table.tbl td .wn{color:var(--warn)}
+table.tbl td .pk{color:var(--pink)}
+table.tbl td .bl{color:var(--blue)}
+
+/* 코드 블록 */
+pre.code{font-family:var(--font-mono);font-size:19px;line-height:1.7;color:var(--text);background:rgba(5,9,18,.7);border:1px solid var(--line);border-left:3px solid var(--mint);padding:24px 28px;overflow:hidden}
+pre.code .c{color:var(--dim)} pre.code .m{color:var(--mint)} pre.code .b{color:var(--blue)} pre.code .w{color:var(--warn)}
+
+/* 플로우(단계) */
+.flow{display:flex;flex-direction:column;gap:12px}
+.step{display:flex;gap:18px;align-items:flex-start;border:1px solid var(--line);background:rgba(15,26,46,.55);padding:14px 20px}
+.step .n{font-family:var(--font-mono);font-weight:800;font-size:22px;color:var(--mint);min-width:44px;border-right:1px solid var(--line);padding-right:14px}
+.step .t{font-size:21px;line-height:1.5}
+.step .t b{color:var(--mint)}
+.step .t .wn{color:var(--warn)}
+
+/* reveal 애니메이션 */
+.reveal{opacity:0;transform:translateY(26px);transition:opacity .6s var(--ease),transform .6s var(--ease)}
+.slide.visible .reveal{opacity:1;transform:none}
+.reveal:nth-child(1){transition-delay:.05s}.reveal:nth-child(2){transition-delay:.14s}
+.reveal:nth-child(3){transition-delay:.23s}.reveal:nth-child(4){transition-delay:.32s}
+.reveal:nth-child(5){transition-delay:.41s}.reveal:nth-child(6){transition-delay:.5s}
+
+/* ===========================================
+   COVER — 타이틀 + 페이즈/항목 내비게이션 맵
+   =========================================== */
+.cover-head{position:absolute;top:58px;left:88px;right:88px;display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid var(--line);padding-bottom:30px}
+.cover-head h1{font-size:64px;font-weight:800;letter-spacing:-.01em;line-height:1.15}
+.cover-head h1 em{font-style:normal;color:var(--mint)}
+.cover-head .meta{text-align:right;font-family:var(--font-mono);font-size:19px;color:var(--dim);line-height:1.9}
+.cover-head .meta b{color:var(--mint)}
+.cover-tag{display:inline-flex;align-items:center;gap:12px;font-family:var(--font-mono);font-size:17px;color:var(--mint);letter-spacing:.22em;margin-bottom:16px}
+.cover-tag::before{content:'';width:9px;height:9px;background:var(--mint);animation:blink 1.4s infinite}
+@keyframes blink{0%,55%{opacity:1}56%,100%{opacity:.15}}
+/* 다단 컬럼 — 카드 높이가 달라도 세로로 흘러 겹침/넘침 없음 */
+.toc-grid{position:absolute;top:245px;left:88px;right:88px;bottom:70px;columns:4;column-gap:18px;overflow:hidden}
+.toc-ph{border:1px solid var(--line);background:rgba(15,26,46,.5);padding:14px 16px 10px;break-inside:avoid;margin-bottom:18px;display:block}
+.toc-ph h4{font-family:var(--font-mono);font-size:16px;color:var(--mint);letter-spacing:.05em;margin-bottom:8px;cursor:pointer}
+.toc-ph h4:hover{color:#fff}
+.toc-ph a{display:block;font-size:15.5px;color:var(--text);text-decoration:none;padding:3px 0 3px 15px;position:relative;line-height:1.3;opacity:.85}
+.toc-ph a::before{content:'›';position:absolute;left:2px;color:var(--dim)}
+.toc-ph a:hover{color:var(--mint);opacity:1}
+.cover-hint{position:absolute;bottom:20px;left:88px;right:88px;font-family:var(--font-mono);font-size:15px;color:var(--dim);letter-spacing:.08em;text-align:center}
+
+/* ===========================================
+   덱 크롬 (스테이지 밖 고정 UI): HUD 바 · TOC 드로어 · 댓글 패널
+   =========================================== */
+.hudbar{position:fixed;left:0;right:0;bottom:0;height:44px;background:rgba(5,9,18,.92);border-top:1px solid var(--line);display:flex;align-items:center;gap:22px;padding:0 20px;z-index:900;font-family:var(--font-mono);font-size:14px;color:var(--dim)}
+.hudbar .ph{color:var(--mint)}
+.hudbar .spacer{flex:1}
+.hudbar button{background:none;border:1px solid var(--line);color:var(--dim);font-family:var(--font-mono);font-size:13px;padding:5px 14px;cursor:pointer;letter-spacing:.08em}
+.hudbar button:hover{color:var(--mint);border-color:var(--mint)}
+.progress{position:fixed;left:0;bottom:44px;height:3px;background:var(--mint);z-index:901;transition:width .3s var(--ease)}
+
+/* TOC 드로어 */
+.drawer{position:fixed;top:0;bottom:44px;left:0;width:420px;background:#070D19;border-right:1px solid var(--line);z-index:950;transform:translateX(-100%);transition:transform .35s var(--ease);overflow-y:auto;padding:26px 22px 40px}
+.drawer.open{transform:none}
+.drawer h5{font-family:var(--font-mono);font-size:14px;letter-spacing:.2em;color:var(--dim);margin-bottom:18px}
+.drawer .dph{margin-bottom:6px}
+.drawer .dph>span{display:block;font-family:var(--font-mono);font-size:15px;color:var(--mint);padding:8px 10px;cursor:pointer;border-left:2px solid var(--line)}
+.drawer .dph>span:hover{background:rgba(63,224,181,.06)}
+.drawer a{display:block;font-size:15px;color:var(--text);opacity:.8;text-decoration:none;padding:6px 10px 6px 30px;border-left:2px solid transparent}
+.drawer a:hover{color:var(--mint);opacity:1}
+.drawer a.cur{color:var(--mint);border-left-color:var(--mint);opacity:1;background:rgba(63,224,181,.05)}
+
+/* 댓글 패널 (giscus) */
+.cpanel{position:fixed;top:0;bottom:44px;right:0;width:480px;background:#070D19;border-left:1px solid var(--line);z-index:950;transform:translateX(100%);transition:transform .35s var(--ease);display:flex;flex-direction:column}
+.cpanel.open{transform:none}
+.cpanel .chead{padding:20px 24px;border-bottom:1px solid var(--line);font-family:var(--font-mono)}
+.cpanel .chead .ct{font-size:13px;letter-spacing:.2em;color:var(--dim)}
+.cpanel .chead .cs{font-size:16px;color:var(--mint);margin-top:8px}
+.cpanel .cbody{flex:1;overflow-y:auto;padding:16px}
+.cpanel .setup{font-size:15px;line-height:1.8;color:var(--dim);padding:14px}
+.cpanel .setup b{color:var(--warn)}
+.cpanel .setup code{font-size:13px}
+.dim-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:940;opacity:0;pointer-events:none;transition:opacity .3s}
+.dim-overlay.show{opacity:1;pointer-events:auto}
+
+/* 인라인 편집 */
+.edit-hotzone{position:fixed;top:0;left:0;width:80px;height:80px;z-index:10000;cursor:pointer}
+.edit-toggle{position:fixed;top:16px;left:16px;z-index:10001;background:#070D19;border:1px solid var(--line);color:var(--dim);font-size:18px;width:44px;height:44px;cursor:pointer;opacity:0;pointer-events:none;transition:opacity .3s}
+.edit-toggle.show,.edit-toggle.active{opacity:1;pointer-events:auto}
+.edit-toggle.active{color:var(--mint);border-color:var(--mint)}
+body.editing .slide.active [data-edit]{outline:1px dashed rgba(63,224,181,.5);outline-offset:3px;cursor:text}
+</style>
+</head>
+<body>
+
+<div class="deck-viewport">
+<main class="deck-stage" id="deckStage">
+
+<!-- ============================================================
+     COVER — 페이즈 · 항목 내비게이션 맵 (첫 페이지 = 목차)
+     ============================================================ -->
+<section class="slide active" data-id="cover" data-phase="COVER" data-title="표지 · 목차">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <div class="cover-head">
+    <div>
+      <div class="cover-tag">STAR-ECHO :: COMBAT SYSTEM SPEC</div>
+      <h1>별의 잔향 — <em>전투 시스템</em> 구현 스펙</h1>
+    </div>
+    <div class="meta">진형 기반 커맨드 턴제 · 완전 수동 전투<br>PHASE <b>01 – 12</b> · REV <b id="covRev">—</b></div>
+  </div>
+  <nav class="toc-grid" id="tocGrid" aria-label="목차"><!-- JS가 TOC 데이터로 렌더 --></nav>
+  <div class="cover-hint">항목 클릭 = 해당 슬라이드로 이동 · [T] 목차 · [C] 댓글 · [←/→]·마우스 휠 이동 · [Home] 표지</div>
+</section>
+
+<!-- ============================================================
+     개정 이력 — REVISIONS 배열(스크립트 상단)에 행 추가하면 자동 반영
+     ============================================================ -->
+<section class="slide" data-id="history" data-phase="DOCUMENT" data-title="개정 이력">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">DOCUMENT CONTROL</span><h2>개정 이력</h2></div><span class="sno">HISTORY</span></header>
+  <div class="body">
+    <div class="panel reveal" style="height:100%">
+      <h3>REVISION <span class="m">LOG</span></h3>
+      <table class="tbl" id="revTable">
+        <thead><tr><th style="width:160px">날짜</th><th style="width:120px">버전</th><th style="width:280px">범위</th><th>내용</th></tr></thead>
+        <tbody><!-- JS 렌더 --></tbody>
+      </table>
+      <p class="note">작성 중 스펙이 변경되면 스크립트 상단 <code>REVISIONS</code> 배열에 항목을 추가한다 — 표지의 REV 표기와 이 표에 자동 반영된다.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     개요 — 전제 · 용어 · 구현 순서
+     ============================================================ -->
+<section class="slide" data-id="overview" data-phase="OVERVIEW" data-title="전제 · 용어 · 구현 순서">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">OVERVIEW</span><h2>전제 · 용어 · 구현 순서</h2></div><span class="sno">00</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>용어 <span class="m">GLOSSARY</span></h3>
+        <table class="tbl xs">
+          <tr><td>유닛</td><td>아군 캐릭터 + 몬스터의 상위 개념. 전투 참여 개체 전부</td></tr>
+          <tr><td>효과(Effect)</td><td>스킬의 최소 기능 단위. 데미지·회복·버프·도발 전부 효과의 한 종류 — 타입 1개 = 핸들러 1개(1:1)</td></tr>
+          <tr><td>연출(VFX)</td><td>파티클·사운드·카메라. 효과(로직)와 완전 별개 레이어</td></tr>
+          <tr><td>effective 스탯</td><td>버프/디버프 반영 실시간 유효값. base와 구분</td></tr>
+          <tr><td>자기 턴</td><td>해당 유닛이 행동 주체인 턴. 쿨·지속 카운트 기준</td></tr>
+          <tr><td>주 대상</td><td>스킬당 1회 선택되는 대상. 효과들이 공유</td></tr>
+          <tr><td>전투</td><td>챕터 진입 → 클리어/패배까지 연속 웨이브 전체</td></tr>
+          <tr><td><span class="bl">타입?</span></td><td><span class="bl">?</span> = 선택 필드 · <span class="bl">[]</span> = 배열 · enum = 열거형</td></tr>
+        </table>
+      </div>
+      <div class="panel reveal">
+        <h3>구현 순서 <span class="m">— Phase 단위 · 앞 단계가 뒤 단계의 전제</span></h3>
+        <table class="tbl xs">
+          <tr><td>1</td><td>Phase 1 — RNG · 이벤트 버스 · 재현·로그의 토대</td></tr>
+          <tr><td>2</td><td>Phase 2 — 데이터 스키마 · 런타임 순수 데이터로 변환</td></tr>
+          <tr><td>3</td><td>Phase 3 — 전투 상태 · 그리드</td></tr>
+          <tr><td>4</td><td>Phase 4 — 턴 엔진</td></tr>
+          <tr><td>5</td><td>Phase 5·6·7 — 타겟팅 · 스킬 선택 · 정산 <span class="bl">(병렬 가능)</span></td></tr>
+          <tr><td>6</td><td>Phase 8·10 — 몬스터 AI · 종료 판정</td></tr>
+          <tr><td>7</td><td>Phase 9 — 웨이브 · 챕터(바깥 루프)</td></tr>
+          <tr><td>8</td><td>Phase 11 — 시뮬레이터 · <b>Phase 12보다 먼저</b></td></tr>
+          <tr><td>9</td><td>Phase 12 — UI/UX · 로직 완성 위에 렌더만</td></tr>
+        </table>
+        <p class="note">전제: 진형 기반 커맨드 턴제 RPG · 완전 수동(자동 없음, 배속 O, 스킵 X) · 타일 이동·지형·사거리 없음.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PHASE 1 — 기반 런타임
+     ============================================================ -->
+<section class="slide" data-id="p1-1" data-phase="PHASE 1 · 기반 런타임" data-title="RNG 시드 스트림">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 1 · 기반 런타임</span><h2>1. RNG 시드 스트림</h2></div><span class="sno">P1-1</span></header>
+  <div class="body">
+    <div class="cols c12">
+      <div class="panel reveal">
+        <h3>CombatRng</h3>
+        <table class="tbl">
+          <tr><td>seed <span class="bl">uint64</span></td><td>챕터 진입 시 1회 고정. 웨이브 전환에도 스트림 연속</td></tr>
+          <tr><td>stream</td><td>PCG/xorshift 등 결정론적 시퀀스</td></tr>
+          <tr><td>next() <span class="bl">float</span></td><td>[0, 1) 반환</td></tr>
+        </table>
+        <p class="note">시드 소스 — 실플레이: 시각·유닛 구성 해시에서 파생(패배 재시작 시 새로 파생). 시뮬레이터: 명시적 주입.</p>
+      </div>
+      <div class="panel hot reveal">
+        <h3>호출 규율 <span class="m">— 재현성의 전부</span></h3>
+        <ul class="ls sm">
+          <li><b>재현성:</b> 동일 (편성+배치+적 덱+seed) → 완전히 동일한 전투 결과</li>
+          <li><b>치명타 판정:</b> 정산 순서(P7)대로 대상별 정확히 1회</li>
+          <li><b>AI 타겟 추첨:</b> 타겟 확정 단계에서 정확히 1회. 후보 열거 = 슬롯 순 고정</li>
+          <li><b>광역:</b> 열거·정산·RNG 소비 전부 <span class="bl">F1→F2→F3→B1→B2→B3</span> 고정</li>
+          <li>후보 집합 산출 = <b>순수 함수</b>(RNG 미사용)</li>
+          <li><span class="wn">RNG 미소비:</span> 확정 치명타 · 후보 1명 · HP 최저 등 결정론적 선정 · 도발 강제</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p1-2" data-phase="PHASE 1 · 기반 런타임" data-title="전투 이벤트 버스 & 로그">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 1 · 기반 런타임</span><h2>2. 전투 이벤트 버스 &amp; 로그</h2></div><span class="sno">P1-2</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>CombatEvent</h3>
+        <table class="tbl xs">
+          <tr><td>seq <span class="bl">int</span></td><td>전역 순번. 정산 순서대로 단조 증가, 전투(챕터) 전체 연속</td></tr>
+          <tr><td>round <span class="bl">int</span></td><td>현재 라운드(웨이브 내부 기준)</td></tr>
+          <tr><td>type</td><td>EventType (우측)</td></tr>
+          <tr><td>source? / target?</td><td>시전자 / 대상</td></tr>
+          <tr><td>effectId? <span class="bl">string</span></td><td>유발 효과 id</td></tr>
+          <tr><td>value? <span class="bl">float</span></td><td>피해·회복·증감량</td></tr>
+          <tr><td>meta? <span class="bl">object</span></td><td>부가 정보</td></tr>
+        </table>
+        <ul class="ls sm" style="margin-top:18px">
+          <li>모든 사건은 <b>단일 스트림</b>으로 방출 — 연출·로그·기여도·디버그는 <b>구독만</b>(단방향)</li>
+          <li>같은 seed → 같은 이벤트 시퀀스. <b>로그 = 스트림 직렬화</b>(별도 로그 코드 없음)</li>
+          <li>순수 데이터 → Unity 비의존 → 시뮬레이터 그대로 수집</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>EventType <span class="m">— 정식명 그대로 구독(축약 금지)</span></h3>
+        <table class="tbl xs">
+          <tr><td>전투 경계</td><td>BATTLE_START/END · WAVE_START/END · ROUND_START/END</td></tr>
+          <tr><td>턴</td><td>TURN_START · TURN_END · TURN_SKIPPED</td></tr>
+          <tr><td>스킬·효과</td><td>SKILL_USED · EFFECT_APPLIED</td></tr>
+          <tr><td>피해·회복</td><td>HIT · CRIT · HEAL · DOT_TICK · LIFESTEAL</td></tr>
+          <tr><td>상태</td><td>STAT_MODIFIER_ADDED/EXPIRED · DOT_ADDED · <b>DOT_PENDING</b> · IMMUNITY_BLOCK · TAUNT_APPLIED · REDUCTION_APPLIED</td></tr>
+          <tr><td>기타</td><td>DEATH · SPEED_REORDER</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PHASE 2 — 데이터 스키마
+     ============================================================ -->
+<section class="slide" data-id="p2-1" data-phase="PHASE 2 · 데이터 스키마" data-title="스탯">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 2 · 데이터 스키마</span><h2>1. 스탯</h2></div><span class="sno">P2-1</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>StatBlock <span class="m">— 공식 7종 · 회피/명중 없음</span></h3>
+        <table class="tbl xs">
+          <tr><td>atk / def <span class="bl">int</span></td><td>공격력 / 방어력</td></tr>
+          <tr><td>hp <span class="bl">int</span></td><td>최대 체력(현재 HP는 런타임 상태)</td></tr>
+          <tr><td>critRate <span class="bl">float</span></td><td>치명타 확률 0~1. <b>게임 내 유일한 확률 판정</b></td></tr>
+          <tr><td>critDmg <span class="bl">float</span></td><td>치명타 피해(배율 가산분, 0.5 = +50%)</td></tr>
+          <tr><td>critRes <span class="bl">float</span></td><td>치명 저항 — 확률 차감 아님, <b>피해량 상쇄</b></td></tr>
+          <tr><td>spd <span class="bl">int</span></td><td>행동 속도. 턴 순서 결정자</td></tr>
+        </table>
+        <p class="note">정수 저장 원칙, 확률·계수만 소수 허용. 모든 공격은 명중한다.</p>
+      </div>
+      <div class="panel reveal">
+        <h3>클램프 <span class="m">— effective 산출 마지막 1회 · base 불변</span></h3>
+        <table class="tbl xs">
+          <tr><td>critRate</td><td>0 ~ 1</td></tr>
+          <tr><td>critDmg · critRes · atk · def · elementDef</td><td>하한 0</td></tr>
+          <tr><td>spd</td><td>하한 1 (행동 불능 영구화 방지)</td></tr>
+          <tr><td>hp(최대)</td><td>하한 1</td></tr>
+        </table>
+        <ul class="ls sm" style="margin-top:18px">
+          <li><b>최대 체력 증가:</b> 현재 HP 유지(회복 없음) — HP 비율만 하락</li>
+          <li><b>감소·만료:</b> <code>currentHp = min(currentHp, 새 최대)</code></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p2-2" data-phase="PHASE 2 · 데이터 스키마" data-title="계산 그룹">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 2 · 데이터 스키마</span><h2>2. 버프/디버프 합산 — 계산 그룹</h2></div><span class="sno">P2-2</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>meta.calcGroup <span class="m">— 효과 데이터에 지정(전역 고정 아님)</span></h3>
+        <table class="tbl">
+          <tr><td>ADD_FLAT</td><td>고정값 가감 — 같은 스탯끼리 단순 합산</td></tr>
+          <tr><td>ADD_PERCENT</td><td>가산 퍼센트 — 전부 더한 뒤 1회 곱</td></tr>
+          <tr><td>MUL</td><td>독립 곱연산 — 인스턴스마다 개별 곱(별도 승수)</td></tr>
+        </table>
+        <pre class="code" style="margin-top:22px">effective = (base + <span class="m">Σ ADD_FLAT</span>)
+          × (1 + <span class="b">Σ ADD_PERCENT</span>)
+          × <span class="w">Π (1 + MUL_i)</span></pre>
+      </div>
+      <div class="panel reveal">
+        <h3>규칙</h3>
+        <ul class="ls">
+          <li>예) base atk 120 + 30%(<code>ADD_PERCENT</code>) → 156. 별도 <code>MUL +20%</code> → 156 × 1.20 = <b>187</b></li>
+          <li>합산은 <b>같은 스탯 키 안에서만</b> 이뤄진다</li>
+          <li><span class="wn">피해 감쇄(보호)의 곱연산은 이 파이프라인과 별개</span></li>
+          <li>클램프는 effective 산출의 <b>마지막 단계 1회</b></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p2-3" data-phase="PHASE 2 · 데이터 스키마" data-title="속성 & StatKey">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 2 · 데이터 스키마</span><h2>3. 속성 &amp; StatKey</h2></div><span class="sno">P2-3</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>속성 <span class="m">— 상성 삼각형 없음</span></h3>
+        <table class="tbl">
+          <tr><td>Element</td><td>FIRE · WATER · GRASS · LIGHT · DARK</td></tr>
+          <tr><td>추가 배율</td><td>스킬 부여 속성당 <b>+0.3</b> (2속성 = 각 +0.3)</td></tr>
+          <tr><td>elementDef</td><td>속성별 피해 상쇄값. 속성별 맵, 기본 0</td></tr>
+        </table>
+        <ul class="ls" style="margin-top:20px">
+          <li>유불리 = <b>추가 배율 − 속성 방어</b>의 상호작용으로만 발생</li>
+          <li><b>속성 이점 = 속성 방어 디버프.</b> "빛·풀이 어둠에 유리" = <code>STAT_MODIFIER(ELEMENT_DEF_DARK, down)</code> 부여로 구현 → 밸런싱을 스킬 데이터로 통제</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>StatKey <span class="m">— STAT_MODIFIER 조작 대상 키</span></h3>
+        <table class="tbl">
+          <tr><td>기본 7스탯</td><td>ATK · DEF · HP · CRIT_RATE · CRIT_DMG · CRIT_RES · SPD</td></tr>
+          <tr><td>속성 방어 5키</td><td>ELEMENT_DEF_{FIRE·WATER·GRASS·LIGHT·DARK}</td></tr>
+        </table>
+        <p class="note">신규 스탯은 이 enum에 등재해야 STAT_MODIFIER로 조작 가능.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p2-4" data-phase="PHASE 2 · 데이터 스키마" data-title="클래스 & 유닛 데이터">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 2 · 데이터 스키마</span><h2>4. 클래스 &amp; 유닛 데이터</h2></div><span class="sno">P2-4</span></header>
+  <div class="body">
+    <div class="cols c12">
+      <div class="panel reveal">
+        <h3>Class <span class="m">— 전투 계산 무개입</span></h3>
+        <p style="font-size:21px;line-height:1.6">DEFENSE · MELEE_DPS · RANGED_DPS · SUPPORT<br><span style="color:var(--dim)">용도: UI 표기·필터링, 기획 규율(디자인 컨벤션)뿐.</span></p>
+        <h3 style="margin-top:30px">전투력 <span class="m">power — 동률 판정용</span></h3>
+        <pre class="code">power = atk×1.0 + def×0.8 + hp×0.1
+      + critRate×200 + critDmg×100
+      + critRes×100 + spd×1.0</pre>
+        <p class="note">base 스탯 기준(버프 미반영, 전투 중 불변). 가중치는 임시값. 대소 비교 전용 — 최종 결정자는 ID.</p>
+      </div>
+      <div class="panel reveal">
+        <h3>UnitDef <span class="m">— 캐릭터·몬스터 단일 스키마</span></h3>
+        <table class="tbl xs">
+          <tr><td>id <span class="bl">string</span></td><td>고유 ID. 동률 최종 기준</td></tr>
+          <tr><td>faction</td><td>ALLY · ENEMY</td></tr>
+          <tr><td>monsterTier?</td><td>NORMAL · ELITE · BOSS (ENEMY 전용)</td></tr>
+          <tr><td>class / element</td><td>클래스 / 고유 속성(표기·컨셉용, 스킬 속성과 별개)</td></tr>
+          <tr><td>level <span class="bl">int</span></td><td>동률 판정용</td></tr>
+          <tr><td>baseStats / baseElementDef</td><td>기본 스탯 / 기본 속성 방어</td></tr>
+          <tr><td>skills.normal</td><td><b>필수</b> — 항상 ACTIVE · 쿨 0 · 조건 없음</td></tr>
+          <tr><td>skills.skill1? / skill2?</td><td><b>아군 필수</b>, 몬스터 선택</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p2-5" data-phase="PHASE 2 · 데이터 스키마" data-title="스킬 데이터">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 2 · 데이터 스키마</span><h2>5. 스킬 데이터 <b>— 스킬 = 효과의 조합</b></h2></div><span class="sno">P2-5</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>SkillDef <span class="m">— 발동 조건·쿨·타겟 관리 껍데기</span></h3>
+        <table class="tbl xs">
+          <tr><td>slot</td><td>NORMAL · SKILL1 · SKILL2</td></tr>
+          <tr><td>type</td><td>ACTIVE · PASSIVE</td></tr>
+          <tr><td>elements <span class="bl">[]</span></td><td>0~2개</td></tr>
+          <tr><td>cooldown <span class="bl">int</span></td><td>사용 후 자기 턴 N회 경과 시 재사용 (ACTIVE 전용)</td></tr>
+          <tr><td>initialCooldown <span class="bl">int</span></td><td>전투 시작 시 잔여 쿨 세팅값</td></tr>
+          <tr><td>trigger?</td><td>PASSIVE 트리거 / ACTIVE 발동 조건</td></tr>
+          <tr><td>targeting</td><td>주 대상 선정 규칙(우측)</td></tr>
+          <tr><td>effects <span class="bl">[]</span></td><td>실행할 효과 목록 — 실제 작용 전부</td></tr>
+          <tr><td>timeline?</td><td>발동 타이밍 — <b>ACTIVE 필수 · PASSIVE 생략</b></td></tr>
+        </table>
+      </div>
+      <div class="panel reveal">
+        <h3>Targeting</h3>
+        <table class="tbl xs">
+          <tr><td>scope</td><td>주 대상 선정 범위 — 플레이어/AI가 이 범위에서 1회 선택</td></tr>
+          <tr><td>aiPolicy?</td><td>몬스터 전용 정책 오버라이드. 미지정 시 THREAT_WEIGHTED</td></tr>
+          <tr><td>ignoresTaunt <span class="bl">bool</span></td><td>true면 단일 공격이 <span class="wn">도발 강제 무시</span>(저격·처형용). 기본 false</td></tr>
+        </table>
+        <ul class="ls sm" style="margin-top:18px">
+          <li>타겟 선택은 <b>스킬당 1회</b> → 선택 대상 = 주 대상, <code>MAIN_TARGET</code> 효과들이 공유</li>
+          <li><b>스킬 선택:</b> 아군 = 발동 가능한 스킬 중 <b>플레이어 직접 선택</b> / 몬스터 = 스킬2→1→일반 자동</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p2-6" data-phase="PHASE 2 · 데이터 스키마" data-title="효과 데이터">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 2 · 데이터 스키마</span><h2>6. 효과(Effect) 데이터 <b>— 최소 단위</b></h2></div><span class="sno">P2-6</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>공통 필드 <span class="m">— 타입 1개 = 핸들러 1개(레지스트리)</span></h3>
+        <table class="tbl xs">
+          <tr><td>id <span class="bl">string</span></td><td>스킬 내 유일. 타임라인·로그가 이 id로 참조</td></tr>
+          <tr><td>type</td><td>EffectType (P2-7)</td></tr>
+          <tr><td>target</td><td>TargetScope (P5-1)</td></tr>
+          <tr><td>element?</td><td>피해/도트 속성(없으면 무속성)</td></tr>
+          <tr><td>value <span class="bl">float</span></td><td>계수·수치. <b>항상 양수</b> — 방향은 meta.direction</td></tr>
+          <tr><td>duration? + durationBasis?</td><td>지속 턴 + 카운트 기준(우측)</td></tr>
+          <tr><td>stack?</td><td>중첩 규칙 (P2-9)</td></tr>
+          <tr><td>meta?</td><td>타입별 부가 파라미터</td></tr>
+        </table>
+        <p class="note">신규 스킬 = 기존 효과의 조합 + 파라미터 조정.</p>
+      </div>
+      <div class="panel reveal">
+        <h3>durationBasis <span class="m">— 한 스킬 안에서도 효과마다 다를 수 있음</span></h3>
+        <table class="tbl xs">
+          <tr><td>CASTER_TURN</td><td>시전자의 자기 턴 N회</td></tr>
+          <tr><td>VICTIM_TURN</td><td>걸린 대상 각자의 자기 턴 N회 — 광역이면 대상마다 해제 시점 다름</td></tr>
+          <tr><td>ROUND</td><td>라운드 경과</td></tr>
+          <tr><td>REALTIME</td><td>지속 턴 없음 — 조건 충족 동안만, 이탈 시 <b>즉시 해제</b>(HP·위치 패시브)</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p2-7" data-phase="PHASE 2 · 데이터 스키마" data-title="효과 타입 & 허용 스코프">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 2 · 데이터 스키마</span><h2>7. 효과 타입 &amp; 허용 스코프</h2></div><span class="sno">P2-7</span></header>
+  <div class="body">
+    <div class="cols c12">
+      <div class="panel reveal">
+        <h3>EffectType <span class="m">7종</span></h3>
+        <table class="tbl xs">
+          <tr><td>DAMAGE</td><td>즉발 피해. value = 공격력 계수 · meta: guaranteedCrit?, lifestealRatio?</td></tr>
+          <tr><td>HEAL</td><td>회복. value = 시전자 공격력 계수. 초과 회복 버림</td></tr>
+          <tr><td>DOT</td><td>지속 피해. duration·basis 필수</td></tr>
+          <tr><td>STAT_MODIFIER</td><td>스탯 증감 · meta: stat(StatKey) · calcGroup · direction(up/down)</td></tr>
+          <tr><td>DAMAGE_REDUCTION</td><td>피해 감쇄(보호). value = 감쇄율 · 곱연산</td></tr>
+          <tr><td>TAUNT</td><td>타겟 강제 — 단일 대상 공격에만 작용</td></tr>
+          <tr><td>IMMUNITY</td><td>지정 종류 해로운 효과 차단 · meta: category (P2-10)</td></tr>
+        </table>
+      </div>
+      <div class="panel warn reveal">
+        <h3>허용 TargetScope <span class="m">— 위반 시 로드 에러</span></h3>
+        <table class="tbl xs">
+          <tr><td>DAMAGE · DOT · TAUNT</td><td>ENEMY_* 또는 MAIN_TARGET(적 대상 스킬)</td></tr>
+          <tr><td>HEAL · STAT_MODIFIER(up) · REDUCTION · IMMUNITY</td><td>ALLY_* · SELF 또는 MAIN_TARGET(아군 대상 스킬)</td></tr>
+          <tr><td>STAT_MODIFIER(down)</td><td>ENEMY_* 또는 MAIN_TARGET(적 대상 스킬)</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p2-8" data-phase="PHASE 2 · 데이터 스키마" data-title="트리거 & 존속">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 2 · 데이터 스키마</span><h2>8. 트리거 &amp; 시전자 사망 시 존속</h2></div><span class="sno">P2-8</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>Trigger <span class="m">— 패시브 발동 · 액티브 조건</span></h3>
+        <table class="tbl xs">
+          <tr><td>HP_THRESHOLD</td><td>who(self/target) · comparator(≤/≥) · ratio — <b>REALTIME</b></td></tr>
+          <tr><td>POSITION</td><td>who(self) · row(FRONT/BACK) — <b>REALTIME</b></td></tr>
+          <tr><td>ROUND_START</td><td>매 라운드 시작</td></tr>
+          <tr><td>ON_ATTACK_LANDED</td><td>이 유닛의 공격이 명중한 직후</td></tr>
+          <tr><td>ON_CRIT_LANDED</td><td>치명타로 명중한 직후 <span class="wn">(예약)</span></td></tr>
+          <tr><td>ON_KILL</td><td>공격으로 대상 사망 직후 <span class="wn">(예약)</span></td></tr>
+          <tr><td>BATTLE_START</td><td>전투(챕터 진입) 시작 시 1회</td></tr>
+        </table>
+        <p class="note">동시 성립 시 행동 속도 정렬 순으로 평가(결정론).</p>
+      </div>
+      <div class="panel reveal">
+        <h3>시전자 사망 후 존속 <span class="m">— REALTIME형 해제 · 스냅샷형 유지</span></h3>
+        <table class="tbl">
+          <tr><td>DOT</td><td><b>유지</b> — 부여 시점 계수 확정</td></tr>
+          <tr><td>STAT_MODIFIER</td><td><b>유지</b> — 남은 지속 동안</td></tr>
+          <tr><td>IMMUNITY</td><td><b>유지</b></td></tr>
+          <tr><td>DAMAGE_REDUCTION</td><td><span class="pk">즉시 소멸</span> — 위치·생존이 REALTIME 조건</td></tr>
+          <tr><td>TAUNT</td><td><span class="pk">즉시 소멸</span> — 도발자 부재 시 강제 대상 없음</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p2-9" data-phase="PHASE 2 · 데이터 스키마" data-title="중첩 규칙">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 2 · 데이터 스키마</span><h2>9. 중첩 규칙</h2></div><span class="sno">P2-9</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>StackRule &amp; 그룹 키</h3>
+        <table class="tbl xs">
+          <tr><td>rule</td><td>IGNORE · SEVERAL · OVERRIDE · STACK</td></tr>
+          <tr><td>groupKey?</td><td>동일 효과 판정 키. 미지정 시 자동 파생</td></tr>
+          <tr><td>maxStack?</td><td>STACK 전용, 1 이상</td></tr>
+        </table>
+        <ul class="ls sm" style="margin-top:16px">
+          <li>자동 파생 = <code>type + 구분 필드</code> (STAT_MODIFIER: stat+calcGroup+direction)</li>
+          <li>기본은 시전자 미포함(누가 걸든 같은 효과)</li>
+          <li><span class="wn">예외:</span> TAUNT·DAMAGE_REDUCTION은 <b>키에 시전자 포함 + OVERRIDE</b> — 시전자 다르면 공존, 같으면 갱신</li>
+          <li>중첩 규칙은 <b>같은 그룹 키 안에서만</b> 적용</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>4종 규칙 <span class="m">— 예: "공격력 +10" 2회 유입</span></h3>
+        <table class="tbl xs">
+          <tr><td>IGNORE</td><td>신규 미적용. 지속·수치 그대로 → +10 하나</td></tr>
+          <tr><td>SEVERAL</td><td>별도 인스턴스 추가, 각자 만료 → +20, 각자 소멸</td></tr>
+          <tr><td>OVERRIDE</td><td>기존 제거·교체, 새 수치·지속 재시작 → +10 새로</td></tr>
+          <tr><td>STACK</td><td>스택 +1(max 멈춤) · 지속 재시작 · 수치 = value×스택 → 스택2 = +20</td></tr>
+        </table>
+        <p class="note">즉발 효과(DAMAGE·HEAL)에 stack 무의미. STACK이면 maxStack ≥ 1 필수.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p2-10" data-phase="PHASE 2 · 데이터 스키마" data-title="면역 카테고리">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 2 · 데이터 스키마</span><h2>10. 면역 카테고리</h2></div><span class="sno">P2-10</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>IMMUNITY.meta.category</h3>
+        <table class="tbl">
+          <tr><td>FIRE ~ DARK</td><td>해당 속성이 붙은 해로운 지속 효과(DOT · 디버프 · TAUNT)</td></tr>
+          <tr><td>DOT</td><td>모든 도트</td></tr>
+          <tr><td>DEBUFF</td><td>모든 STAT_MODIFIER(down)</td></tr>
+          <tr><td>TAUNT</td><td>도발</td></tr>
+        </table>
+      </div>
+      <div class="panel hot reveal">
+        <h3>차단 규칙</h3>
+        <ul class="ls">
+          <li><b>신규 차단:</b> category 일치 해로운 지속 효과의 신규 부여 무효 → <code>IMMUNITY_BLOCK</code></li>
+          <li><b>기존 발동 차단:</b> "발동"이 있는 건 <b>도트 틱뿐</b> — 틱 무효(잔여 감소는 진행). STAT_MODIFIER 기부여분은 차단 안 함</li>
+          <li><span class="pk">즉발 DAMAGE·HEAL은 면역과 무관</span> — 속성 면역도 즉발 피해는 통과</li>
+          <li>예) 어둠 면역 1턴 → 어둠 도트·디버프 신규 + 기존 어둠 도트 틱 무효. 어둠 즉발 피해는 그대로</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p2-11" data-phase="PHASE 2 · 데이터 스키마" data-title="데이터 검증">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 2 · 데이터 스키마</span><h2>11. 데이터 검증 규칙 <b>— 위반 시 로드 실패</b></h2></div><span class="sno">P2-11</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>유닛 · 스킬</h3>
+        <ul class="ls sm">
+          <li><code>normal</code>은 항상 ACTIVE · 쿨 0 · trigger 없음</li>
+          <li>ALLY면 skill1·skill2 <b>필수</b> / ENEMY는 normal만 필수</li>
+          <li>skill1·skill2 둘 다 PASSIVE 불가(존재 슬롯 기준)</li>
+          <li><code>elements</code> ≤ 2</li>
+          <li>PASSIVE: 쿨 0 강제 · trigger 필수 · timeline 생략</li>
+          <li>ACTIVE의 trigger = 발동 조건으로만 해석</li>
+          <li><code>initialCooldown ≤ cooldown</code> (ACTIVE)</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>효과 · 타겟팅</h3>
+        <ul class="ls sm">
+          <li>효과 <code>target</code>은 타입별 허용 스코프 표 준수</li>
+          <li><code>MAIN_TARGET</code> 효과의 진영 = <code>targeting.scope</code> 진영 일치</li>
+          <li><code>targeting.scope</code>에 MAIN_TARGET·SELF 사용 불가</li>
+          <li>STAT_MODIFIER: stat은 StatKey 값 · <code>value &gt; 0</code> · direction 필수</li>
+          <li>STACK이면 <code>maxStack ≥ 1</code></li>
+          <li>효과 <code>id</code>는 스킬 내 유일</li>
+          <li>ACTIVE의 모든 효과는 <b>타임라인 키 1개 이상에 바인딩</b></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p2-12" data-phase="PHASE 2 · 데이터 스키마" data-title="스킬 타임라인">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 2 · 데이터 스키마</span><h2>12. 스킬 타임라인 <b>— 로직(무엇을) / 연출 타이밍(언제) 분리</b></h2></div><span class="sno">P2-12</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>스키마</h3>
+        <table class="tbl xs">
+          <tr><td colspan="2" style="color:var(--blue);font-family:var(--font-mono)">SkillTimeline</td></tr>
+          <tr><td>clipId / duration</td><td>애니메이션 클립 참조 / 총 길이(초)</td></tr>
+          <tr><td>keys <span class="bl">[]</span></td><td>발동 키 목록</td></tr>
+          <tr><td colspan="2" style="color:var(--blue);font-family:var(--font-mono)">TimelineKey</td></tr>
+          <tr><td>at <span class="bl">float</span></td><td>정규화 시간 0.0~1.0 (프레임레이트 변화에 강건)</td></tr>
+          <tr><td>effectIds <span class="bl">[]</span></td><td>이 시점에 발동할 효과 id</td></tr>
+        </table>
+        <p class="note">애니메이터가 키만 옮겨도 타이밍이 바뀌고 로직 데이터는 그대로.</p>
+      </div>
+      <div class="panel reveal">
+        <h3>실행 규칙</h3>
+        <ul class="ls sm">
+          <li>결과(데미지·사망·승패)는 연출 타이밍과 무관하게 <b>결정론적</b> — 타임라인은 실행 순서·노출 시점만 규정</li>
+          <li>실행 순서 = <code>at</code> 오름차순 → 동일 at는 키 id 순 → effectIds 배열 순</li>
+          <li><span class="pk">로직 발동을 애니메이션 이벤트(노티파이)로 하지 않는다</span> — 노티파이는 발소리 등 보조 연출 전용</li>
+          <li>ACTIVE에서 미바인딩 효과 = 로드 에러. "종료 시 몰아 발동" 안전망 없음</li>
+          <li>PASSIVE는 타임라인 없이 트리거 순간 <b>배열 순 즉시 정산</b></li>
+          <li>다단 히트 = 히트마다 별도 효과 + 다른 <code>at</code>(독립 정산). 현 스킬 풀에 없음</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p2-13" data-phase="PHASE 2 · 데이터 스키마" data-title="연출 처리">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 2 · 데이터 스키마</span><h2>13. 연출(VFX) 처리</h2></div><span class="sno">P2-13</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>원칙 &amp; 두 가지 발동 경로</h3>
+        <ul class="ls sm">
+          <li>연출은 전투 결과를 <span class="pk">절대 바꾸지 않는다</span> — 결과는 정산에서 확정</li>
+          <li>로직은 연출을 기다리지 않는다. 배속 = 큐 소비 속도만 ↑, 스킵 없음</li>
+          <li><b>저작형:</b> 타임라인 키에 연출 큐 바인딩(마법진·머즐·궤적)</li>
+          <li><b>반응형:</b> 결과 이벤트 구독 자동 재생(피격 스파크·치명 강조·사망) — 재생 순서·그룹핑은 연출 레이어 재량</li>
+          <li>발사체 = 순수 연출. 히트는 항상 키 <code>at</code>에서 확정 — <b>시각적 도착 순간에 히트 키 배치</b></li>
+          <li>전역 연출(치명·처치·보스 등장·히트스톱)은 이벤트 스트림 구독으로</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>VfxCue &amp; 반응형 매핑</h3>
+        <table class="tbl xs">
+          <tr><td>anchor</td><td>CASTER · TARGET · GROUND · SCREEN (+ socket?)</td></tr>
+          <tr><td>loop <span class="bl">bool</span></td><td>지속형 = 효과 인스턴스 수명 종속 · 스택/인스턴스 수 뱃지</td></tr>
+          <tr><td>channel</td><td>VFX · SOUND · CAMERA — 단일 큐로 통합</td></tr>
+        </table>
+        <table class="tbl xs" style="margin-top:16px">
+          <tr><td>HIT / CRIT</td><td>임팩트 스파크 / 치명 강조(전역 포함)</td></tr>
+          <tr><td>DEATH / HEAL</td><td>소멸 연출 / 회복 광채</td></tr>
+          <tr><td>IMMUNITY_BLOCK</td><td>방어 표식</td></tr>
+          <tr><td>TAUNT_APPLIED / REDUCTION_APPLIED</td><td>도발자 강조 / 실드 플래시</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p2-14" data-phase="PHASE 2 · 데이터 스키마" data-title="데이터 저작 & 관리">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 2 · 데이터 스키마</span><h2>14. 데이터 저작 &amp; 관리</h2></div><span class="sno">P2-14</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel hot reveal">
+        <h3>대원칙 <span class="m">— 저작 ↔ 런타임 분리</span></h3>
+        <ul class="ls sm">
+          <li>SO/시트는 <b>저작 전용</b>. 런타임은 엔진 비의존 순수 데이터로 변환해 사용</li>
+          <li>런타임이 SO에 의존하면 <span class="pk">시뮬레이터가 Unity 없이 못 돈다</span></li>
+          <li><b>ID 자동 발급</b> — 수기 입력 금지. effectIds는 드롭다운 선택 → 끊어진 참조 원천 차단</li>
+          <li>OnValidate에서 검증 규칙(P2-11) 실시간 검사 + 참조 감지 + at 미리보기</li>
+          <li>승격 기준: 2개 이상 스킬 공유 시 공용 SO로 분리, 아니면 인라인</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>4계층 <span class="m">— 작업 단위 = SkillSO 하나</span></h3>
+        <table class="tbl xs">
+          <tr><td>배포 UnitSO</td><td>기본 스탯·속성 방어·클래스 + 스킬 참조 (SO 1 = 유닛 1)</td></tr>
+          <tr><td>작업 SkillSO ★</td><td>효과·타임라인·타겟팅·쿨 — 한 인스펙터에 전부</td></tr>
+          <tr><td>재사용 EffectSO/VfxCueSO</td><td>공용 효과·연출(승격 시)</td></tr>
+          <tr><td>밸런싱 시트 행</td><td>레벨 곡선·계수·쿨·임계값 → 임포터가 변환</td></tr>
+        </table>
+        <p class="note">밸런서는 시트만, 구조는 SO만 — 편집 충돌 방지. 신규 스킬은 카탈로그(타입↔핸들러·공용 큐·템플릿)에서 골라 조립.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p2-15" data-phase="PHASE 2 · 데이터 스키마" data-title="스킬 데이터 예시">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 2 · 데이터 스키마</span><h2>15. 스킬 데이터 예시</h2></div><span class="sno">P2-15</span></header>
+  <div class="body">
+    <div class="panel reveal" style="height:100%">
+      <table class="tbl xs">
+        <tr><td>페리온 마검의 각성 (P)</td><td>HP_THRESHOLD(self,≤,0.5) → STAT_MODIFIER(ATK +30%) + (SPD +10 고정), REALTIME, target=SELF</td></tr>
+        <tr><td>자네트 유연한 자세 (P)</td><td>POSITION(self,BACK) → STAT_MODIFIER(CRIT_RATE +20%) + (SPD +5), REALTIME</td></tr>
+        <tr><td>자네트 헤드샷 (A)</td><td>targeting: ENEMY_LOWEST_HP → DAMAGE(2.2, guaranteedCrit), target=MAIN_TARGET</td></tr>
+        <tr><td>에멜 저주의 낙인 (A)</td><td>ENEMY_SINGLE → DAMAGE(1.0, DARK) + DOT(0.4, DARK, 3턴, VICTIM_TURN, SEVERAL)</td></tr>
+        <tr><td>에멜 혼의 끌어당김 (A)</td><td>ENEMY_ALL → DAMAGE(0.8, [DARK,GRASS], lifesteal 0.3)</td></tr>
+        <tr><td>오를리아 치유의 기도 (A)</td><td>ALLY_INCL_SELF_SINGLE → HEAL(3.3) + IMMUNITY(1턴, category DARK) — 선택 1회 공유</td></tr>
+        <tr><td>오를리아 수호의 결계 (P)</td><td>POSITION(self,FRONT) → REDUCTION(0.15, ALLY_SAME_COLUMN) + STAT_MODIFIER(ELEMENT_DEF_LIGHT +20), REALTIME</td></tr>
+        <tr><td>아델린 빙벽의 도발 (A)</td><td>ENEMY_ALL → TAUNT(2턴, VICTIM_TURN) + STAT_MODIFIER(DEF +50%, 2턴, CASTER_TURN, SELF)</td></tr>
+        <tr><td>아델린 마검의 수호 (P)</td><td>POSITION(self,FRONT) → REDUCTION(0.30, ALLY_ADJACENT_LOWEST_HP), REALTIME</td></tr>
+        <tr><td>고블린 도적 기습 (A)</td><td>ENEMY_BACK_SINGLE, aiPolicy BACKLINE_FIRST → DAMAGE(1.2)</td></tr>
+        <tr><td>다크엘프 궁수 사격 (A)</td><td>ENEMY_LOWEST_HP → DAMAGE(1.1)</td></tr>
+        <tr><td>죽음의 사제 치유 (A)</td><td>ALLY_LOWEST_HP → HEAL(2.5)</td></tr>
+        <tr><td>그림자기사 어둠의 사슬 (A)</td><td>ENEMY_BACK_ALL → DAMAGE(1.3, DARK) + STAT_MODIFIER(SPD 30 down, 2턴, VICTIM_TURN)</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PHASE 3 — 전투 상태 & 그리드
+     ============================================================ -->
+<section class="slide" data-id="p3-1" data-phase="PHASE 3 · 전투 상태 & 그리드" data-title="그리드 & 초기화">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 3 · 전투 상태 &amp; 그리드</span><h2>1. 그리드 &amp; 전투 초기화</h2></div><span class="sno">P3-1</span></header>
+  <div class="body">
+    <div class="cols c12">
+      <div class="panel reveal">
+        <h3>2×3 그리드 <span class="m">— 진영별 독립</span></h3>
+        <pre class="code">        col1   col2   col3
+<span class="m">FRONT</span> [ F1 ] [ F2 ] [ F3 ]
+<span class="b">BACK </span> [ B1 ] [ B2 ] [ B3 ]
+
+Slot = { row: FRONT|BACK, col: 1~3 }</pre>
+        <ul class="ls sm" style="margin-top:18px">
+          <li>빈 칸 = 배치하지 않은 슬롯</li>
+          <li>사망 시 칸에서 제거, <b>공석 유지(자동 이동 없음)</b></li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>초기화 파이프라인 &amp; 편성 검증</h3>
+        <div class="flow">
+          <div class="step"><span class="n">1-3</span><span class="t">편성(1~5명) → 배치(마지막 설정 유지) → <b>BattleUnit 생성</b>(UnitDef 복제 + 런타임 초기화)</span></div>
+          <div class="step"><span class="n">4</span><span class="t">initialCooldown 적용 — <span class="wn">챕터 진입 시 1회만</span>(웨이브 전환 시 잔여 쿨 유지)</span></div>
+          <div class="step"><span class="n">5-6</span><span class="t">BATTLE_START → 1라운드 ROUND_START 트리거 평가 → 행동 속도 정렬 → 라운드 1</span></div>
+        </div>
+        <p class="note">편성 검증(위반 시 진입 차단): 1~5명 · 동일 UnitDef 중복 금지 · 슬롯당 1유닛 · 빈 칸 허용(연속 불필요) · 적 덱도 동일 규칙.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p3-2" data-phase="PHASE 3 · 전투 상태 & 그리드" data-title="런타임 유닛 상태">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 3 · 전투 상태 &amp; 그리드</span><h2>2. 런타임 유닛 상태</h2></div><span class="sno">P3-2</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>BattleUnit <span class="m">— UnitDef와 분리된 가변 상태</span></h3>
+        <table class="tbl xs">
+          <tr><td>ref / slot</td><td>원본 UnitDef 참조 / 현재 슬롯</td></tr>
+          <tr><td>currentHp / alive</td><td>현재 HP / 생존 여부</td></tr>
+          <tr><td>cooldowns</td><td>skill1·skill2 잔여 쿨(자기 턴 기준)</td></tr>
+          <tr><td>activeEffects <span class="bl">[]</span></td><td>걸려 있는 지속 효과 인스턴스</td></tr>
+          <tr><td>actedThisRound <span class="bl">bool</span></td><td>재정렬·중복 행동 방지</td></tr>
+        </table>
+      </div>
+      <div class="panel reveal">
+        <h3>ActiveEffect &amp; effective 스탯</h3>
+        <table class="tbl xs">
+          <tr><td>source</td><td>시전자(소멸 판정·계수 산출용)</td></tr>
+          <tr><td>def</td><td>원본 효과 정의</td></tr>
+          <tr><td>remaining?</td><td>잔여 지속(basis 따라 감소)</td></tr>
+          <tr><td>instanceId</td><td>SEVERAL 독립 누적 / STACK 카운터 식별</td></tr>
+        </table>
+        <ul class="ls sm" style="margin-top:16px">
+          <li>effective = base + STAT_MODIFIER 합산(계산 그룹 규칙)</li>
+          <li>실시간 계산 또는 부여/해제 시 캐싱 — <b>항상 최신 보장</b> 필수(특히 <span class="wn">spd</span> = 재정렬 트리거)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p3-3" data-phase="PHASE 3 · 전투 상태 & 그리드" data-title="앞열 판정 & 인접 쿼리">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 3 · 전투 상태 &amp; 그리드</span><h2>3. 앞열 판정 &amp; 인접 쿼리</h2></div><span class="sno">P3-3</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>유효 앞열</h3>
+        <ul class="ls">
+          <li><b>유효 앞열</b> = FRONT 행의 생존 유닛 집합</li>
+          <li>공집합(앞열 전멸) → 앞열 대상 공격은 BACK으로 전환(P5)</li>
+          <li>판정은 <b>매 타격 시점 재평가</b> — 공격 도중 앞열이 죽을 수 있음</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>인접 쿼리 <span class="m">— 순수 함수 · 보호 위치 규칙의 기반</span></h3>
+        <table class="tbl">
+          <tr><td>sameColumn(F2)</td><td>{F2, B2} — 같은 col 두 칸</td></tr>
+          <tr><td>sideAdjacent(F2)</td><td>{F1, F3} — 같은 row 좌우</td></tr>
+          <tr><td>oppositeRow(F2)</td><td>{B2} — 같은 col 반대 row</td></tr>
+        </table>
+        <ul class="ls sm" style="margin-top:16px">
+          <li><code>ALLY_SAME_COLUMN</code> = sameColumn(시전자) 생존 아군(본인 포함)</li>
+          <li><code>ALLY_ADJACENT_LOWEST_HP</code> = (sideAdjacent ∪ oppositeRow) 생존 아군 중 HP 비율 최저 1 — 동률: 앞열 → col 낮은 순 → ID</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PHASE 4 — 턴 엔진
+     ============================================================ -->
+<section class="slide" data-id="p4-1" data-phase="PHASE 4 · 턴 엔진" data-title="정렬 & 동률 처리">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 4 · 턴 엔진</span><h2>1. 행동 속도 정렬 &amp; 동률 처리</h2></div><span class="sno">P4-1</span></header>
+  <div class="body">
+    <div class="cols c12">
+      <div class="panel reveal">
+        <h3>정렬 키 <span class="m">— 위에서부터 우선</span></h3>
+        <div class="flow">
+          <div class="step"><span class="n">1</span><span class="t"><b>effective spd</b> 내림차순</span></div>
+          <div class="step"><span class="n">2</span><span class="t">아군 우선 (ALLY &gt; ENEMY)</span></div>
+          <div class="step"><span class="n">3</span><span class="t">레벨 높은 순</span></div>
+          <div class="step"><span class="n">4</span><span class="t">전투력 높은 순 — <b>base 기준</b>(버프 미반영, 전투 중 불변)</span></div>
+          <div class="step"><span class="n">5</span><span class="t">유닛 ID 순 — 최종 결정자, 항상 유일</span></div>
+        </div>
+      </div>
+      <div class="panel hot reveal">
+        <h3>불변식</h3>
+        <ul class="ls">
+          <li>완전 결정론적 — 동률로 인한 비결정성 없음</li>
+          <li>1턴 = 유닛 1명의 행동</li>
+          <li>1사이클 = 전원 각 1회 행동 = <b>1라운드</b></li>
+          <li>재정렬이 몇 번 일어나든 <b>라운드당 정확히 1회 행동</b> — 재정렬은 순서만 바꾸지 횟수를 안 바꾼다</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p4-2" data-phase="PHASE 4 · 턴 엔진" data-title="턴 큐 · 라운드 루프">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 4 · 턴 엔진</span><h2>2. 턴 큐 · 라운드 루프</h2></div><span class="sno">P4-2</span></header>
+  <div class="body">
+    <div class="panel reveal" style="height:100%">
+      <h3>라운드 루프</h3>
+      <div class="flow">
+        <div class="step"><span class="n">1</span><span class="t">모든 생존 유닛 <code>actedThisRound = false</code> → ROUND_START 트리거 평가</span></div>
+        <div class="step"><span class="n">2</span><span class="t">미행동 큐 = 생존 전원을 정렬 키(P4-1)로 정렬</span></div>
+        <div class="step"><span class="n">3</span><span class="t">큐에 유닛이 남은 동안: 맨 앞 유닛 pop(대기 중 사망 시 스킵) → <b>턴 실행</b> [행동 가능 확인 → 스킬 선택(P6) → 타겟 확정(P5) → 효과 정산(P7) → 턴 종료 처리] → <code>actedThisRound = true</code></span></div>
+        <div class="step"><span class="n">4</span><span class="t">매 턴 후 진영 전멸 체크(P10) — 종료 시 <span class="wn">즉시 탈출</span></span></div>
+        <div class="step"><span class="n">5</span><span class="t">라운드 종료 처리(P4-4) → 다음 라운드</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p4-3" data-phase="PHASE 4 · 턴 엔진" data-title="즉시 재정렬">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 4 · 턴 엔진</span><h2>3. 행동 속도 즉시 재정렬</h2></div><span class="sno">P4-3</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>규칙 <span class="m">— spd가 바뀐 그 즉시</span></h3>
+        <ul class="ls">
+          <li>트리거: spd에 영향을 주는 <b>모든 처리 직후</b>(버프·디버프·패시브 진입/해제). spd 무관 처리는 재정렬 안 함 — dirty 플래그 권장</li>
+          <li>대상 = <b>미행동 큐에 남은 유닛만</b></li>
+          <li>이미 행동한 유닛·현재 행동 중 유닛 제외 — 사이클 재진입 없음</li>
+          <li>미행동 큐를 정렬 키로 재정렬 → 다음 차례부터 반영</li>
+        </ul>
+      </div>
+      <div class="panel warn reveal">
+        <h3>엣지 케이스</h3>
+        <ul class="ls sm">
+          <li><b>자기 스킬로 자기 spd 변경:</b> 이번 사이클 행동은 이미 소비 → <span class="wn">다음 라운드부터 반영</span></li>
+          <li><b>타 유닛 spd 변경:</b> 그 유닛이 미행동이면 즉시 순서 이동 — 예) 어둠의 사슬(spd↓)에 맞은 미행동 아군은 즉시 뒤로 밀림</li>
+          <li><b>패시브 실시간 해제로 spd 원복</b>도 동일 트리거 — HP 회복으로 각성 꺼지면 재정렬</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p4-4" data-phase="PHASE 4 · 턴 엔진" data-title="행동 불가 & 종료 처리">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 4 · 턴 엔진</span><h2>4. 행동 불가 &amp; 턴/라운드 종료 처리</h2></div><span class="sno">P4-4</span></header>
+  <div class="body">
+    <div class="cols c12">
+      <div class="panel reveal">
+        <h3>턴 종료 처리 <span class="m">— 순서 고정</span></h3>
+        <div class="flow">
+          <div class="step"><span class="n">1</span><span class="t"><b>도트 틱</b> — 본인에게 걸린 도트 발동(P7-5)</span></div>
+          <div class="step"><span class="n">2</span><span class="t">VICTIM_TURN 지속 −1 (0이면 만료)</span></div>
+          <div class="step"><span class="n">3</span><span class="t">CASTER_TURN 지속 −1 (본인이 시전자인 효과)</span></div>
+          <div class="step"><span class="n">4</span><span class="t">쿨 감소 — 사용 스킬 제외 액티브 −1(P6-2)</span></div>
+          <div class="step"><span class="n">5</span><span class="t">TURN_END 이벤트</span></div>
+        </div>
+        <p class="note">틱을 감소보다 먼저 — "3턴 도트 = 정확히 3틱"의 근거(감소 먼저면 마지막 틱 소실). 라운드 종료: ROUND 기준 −1 → ROUND_END → 다음 ROUND_START → 정렬.</p>
+      </div>
+      <div class="panel reveal">
+        <h3>행동 불가(턴 스킵)</h3>
+        <ul class="ls sm">
+          <li>턴 진입 시 행동 불가면 스킬·타겟 없이 턴 종료 처리로 직행. <code>actedThisRound = true</code></li>
+          <li>스킵 턴에도 종료 처리 <b>전부 진행</b> — 도트 틱 받고, 지속·쿨 감소 정상</li>
+          <li>스킵 시 쿨 감소: 사용 스킬 없음 → <b>보유 액티브 전부 −1</b></li>
+          <li>기절 등 유발 효과는 현 스킬 풀에 없음(타입 확장 시 추가)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PHASE 5 — 타겟팅
+     ============================================================ -->
+<section class="slide" data-id="p5-1" data-phase="PHASE 5 · 타겟팅" data-title="TargetScope">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 5 · 타겟팅</span><h2>1. TargetScope</h2></div><span class="sno">P5-1</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>참조 · 적 스코프</h3>
+        <table class="tbl xs">
+          <tr><td>MAIN_TARGET</td><td>스킬의 주 대상 참조 — <b>효과 전용</b>(targeting.scope 불가)</td></tr>
+          <tr><td>ENEMY_SINGLE</td><td>적 단일(기본 앞열 규칙)</td></tr>
+          <tr><td>ENEMY_BACK_SINGLE</td><td>적 뒷열 단일 명시</td></tr>
+          <tr><td>ENEMY_ALL / FRONT_ALL / BACK_ALL</td><td>적 전체 / 앞열 전체 / 뒷열 전체</td></tr>
+          <tr><td>ENEMY_LOWEST_HP</td><td>적 중 HP 비율 최저 1</td></tr>
+        </table>
+      </div>
+      <div class="panel reveal">
+        <h3>아군 · 위치 스코프</h3>
+        <table class="tbl xs">
+          <tr><td>ALLY_SINGLE / LOWEST_HP / ALL</td><td>아군(시전자 제외)</td></tr>
+          <tr><td>ALLY_INCL_SELF_*</td><td>자신 포함 아군 (SINGLE / LOWEST_HP / ALL)</td></tr>
+          <tr><td>SELF</td><td>자신만</td></tr>
+          <tr><td>ALLY_SAME_COLUMN</td><td>시전자와 같은 열 생존 아군(본인 포함)</td></tr>
+          <tr><td>ALLY_ADJACENT_LOWEST_HP</td><td>시전자 인접(좌우+앞뒤) 중 HP 비율 최저 1</td></tr>
+        </table>
+        <p class="note">HP 기준 선정은 전부 <b>HP 비율(현재/최대) 최저</b>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p5-2" data-phase="PHASE 5 · 타겟팅" data-title="주 대상 선정">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 5 · 타겟팅</span><h2>2. 주 대상 선정 <b>— 스킬당 1회</b></h2></div><span class="sno">P5-2</span></header>
+  <div class="body">
+    <div class="cols c12">
+      <div class="panel reveal">
+        <h3>선정 흐름</h3>
+        <div class="flow">
+          <div class="step"><span class="n">1</span><span class="t"><code>targeting.scope</code>로 후보 집합 산출 — <b>순수 함수, RNG 미사용</b></span></div>
+          <div class="step"><span class="n">2</span><span class="t">강제 규칙(도발)이 있으면 후보가 이미 좁혀짐</span></div>
+          <div class="step"><span class="n">3</span><span class="t">입력 소스가 1명 선택 — 아군: 플레이어 UI / 몬스터: AI 정책(P8) / 조건부 스코프: 자동 확정</span></div>
+          <div class="step"><span class="n">4</span><span class="t">선택 유닛 = <b>주 대상</b> → <code>MAIN_TARGET</code> 효과 전부 공유</span></div>
+          <div class="step"><span class="n">5</span><span class="t">고정 스코프 효과(SELF 등)는 정산 시점에 독립 산정 · 광역은 선택 생략(범위 전체)</span></div>
+        </div>
+      </div>
+      <div class="panel warn reveal">
+        <h3>경계</h3>
+        <ul class="ls sm">
+          <li>플레이어와 AI가 타겟팅 로직 공유 — AI는 "후보에서 고르는 규칙"만 얹음</li>
+          <li>타겟 선택은 <b>항상 1회·1명</b></li>
+          <li><span class="pk">"아군 2명 선택" 같은 복수 선택형은 미지원</span> — 주 대상 단일 참조가 구조의 근간. 필요 시 별도 스키마 설계</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p5-3" data-phase="PHASE 5 · 타겟팅" data-title="앞열 · 뒷열 · 광역">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 5 · 타겟팅</span><h2>3. 앞열 규칙 · 뒷열 명시 · 광역</h2></div><span class="sno">P5-3</span></header>
+  <div class="body">
+    <div class="cols c3">
+      <div class="panel reveal">
+        <h3>기본 앞열 규칙</h3>
+        <ul class="ls sm">
+          <li><code>ENEMY_SINGLE</code> 후보 = 상대 <b>유효 앞열</b></li>
+          <li>앞열 공집합 → <b>뒷열 자동 전환</b></li>
+          <li>광역은 이 규칙 무관 — 지정 범위 생존자 전원</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>뒷열 명시</h3>
+        <ul class="ls sm">
+          <li><code>ENEMY_BACK_*</code>는 앞열 생존과 무관하게 뒷열 직접 타겟</li>
+          <li>뒷열도 공집합이면 <span class="pk">폴백 없음</span> — 발동 불가(P5-5). 수동 전투라 플레이어가 다른 스킬 선택</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>광역</h3>
+        <ul class="ls sm">
+          <li>범위 내 생존자 전원에 개별 적용</li>
+          <li>열거·정산 = <b>슬롯 순 고정</b>(F1→B3) — 치명 RNG 순서 직결, 결정론 필수</li>
+          <li>정렬은 교체 가능한 인터페이스로 분리(기본 = 슬롯 순)</li>
+          <li>흡혈은 총 피해 합산 후 1회 회복(P7)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p5-4" data-phase="PHASE 5 · 타겟팅" data-title="도발 강제">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 5 · 타겟팅</span><h2>4. 도발 강제</h2></div><span class="sno">P5-4</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel hot reveal">
+        <h3>강제 범위 <span class="m">— 모든 단일 대상 공격</span></h3>
+        <ul class="ls">
+          <li><code>ENEMY_SINGLE</code>은 물론 <code>ENEMY_BACK_SINGLE</code>·<code>ENEMY_LOWEST_HP</code> 등 조건부·뒷열 명시 단일기도 <b>스코프 무시하고 도발자 타격</b></li>
+          <li>광역·회복·버프에는 영향 없음</li>
+          <li><span class="wn">예외:</span> <code>targeting.ignoresTaunt = true</code> 스킬은 강제 안 받음(저격·처형 컨셉, 데이터 지정)</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>적용 시점 &amp; 다중 도발</h3>
+        <ul class="ls">
+          <li>적용 = <b>타겟 확정 직전</b>. 이 시점에 도발자 생존을 <b>실시간 재조회</b>(턴 진입~확정 사이 사망 가능)</li>
+          <li>도발자 2명 이상 → 가장 마지막에 걸린 도발(<b>부여 seq 최대</b>)의 시전자를 강제</li>
+          <li>도발자 사망 → 해당 도발 즉시 소멸, 최근 도발로 위임. <b>위임 대상 없으면 원래 스코프 후보로 복귀</b></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p5-5" data-phase="PHASE 5 · 타겟팅" data-title="조건부 · 입력 · 불발">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 5 · 타겟팅</span><h2>5. 조건부 선정 · 입력 주체 · 타겟 없음</h2></div><span class="sno">P5-5</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>조건부 선정 &amp; 입력 주체</h3>
+        <ul class="ls sm">
+          <li>LOWEST_HP 계열 = 선정 시점 <b>HP 비율 최저</b>. "가장 약한 적" 같은 중의적 표현 금지</li>
+          <li>동률: 앞열 우선 → col 낮은 순 → ID 순</li>
+          <li>아군 = 플레이어가 후보 집합에서 UI로 선택 / 몬스터 = AI 정책</li>
+          <li>강제 규칙 있으면 그 안에서만 선택</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>타겟 없음 · 자기 포함</h3>
+        <ul class="ls sm">
+          <li>유효 타겟 0 = 발동 불가 — 아군은 버튼 비활성, 몬스터는 다음 우선순위로. 일반 공격도 대상 없으면 <b>무행동 턴</b></li>
+          <li>판정은 <b>"생존 대상 존재"만</b> — 예상 회복량 안 봄. 풀피 아군만 있어도 힐 발동(회복 0, 초과 버림) → 발동 여부가 흔들리지 않아 결정론 단순</li>
+          <li>광역은 1명이라도 있으면 발동</li>
+          <li>자기 포함은 스코프가 명시: ALLY_*(제외) / ALLY_INCL_SELF_*(포함) / SELF. 스킬 설명 문구도 이를 구분</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PHASE 6 — 스킬 선택 & 쿨타임
+     ============================================================ -->
+<section class="slide" data-id="p6-1" data-phase="PHASE 6 · 스킬 선택 & 쿨타임" data-title="발동 판정 & 선택 주체">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 6 · 스킬 선택 &amp; 쿨타임</span><h2>1. 발동 가능 판정 &amp; 선택 주체</h2></div><span class="sno">P6-1</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>발동 가능 판정 <span class="m">— 순수 함수, 아군 UI·몬스터 AI 공유</span></h3>
+        <pre class="code">발동 가능 = <span class="m">잔여 쿨 0</span>
+        AND <span class="b">발동 조건 충족</span> (trigger 있을 때)
+        AND <span class="w">유효 타겟 존재</span></pre>
+        <ul class="ls sm" style="margin-top:18px">
+          <li>일반 공격은 쿨·조건 없음 — 대상만 있으면 항상 가능</li>
+          <li>패시브 슬롯은 판정 대상 아님(트리거로 별도 발동)</li>
+        </ul>
+      </div>
+      <div class="panel hot reveal">
+        <h3>선택 주체 <span class="m">— 수동 전투의 핵심</span></h3>
+        <table class="tbl">
+          <tr><td>아군</td><td>발동 가능 슬롯 집합을 UI 노출(불가 슬롯 비활성) → <b>플레이어가 직접 선택</b></td></tr>
+          <tr><td>몬스터</td><td>스킬2 → 스킬1 → 일반 순 평가, <b>발동 가능한 첫 스킬 자동 사용</b>. 존재 슬롯만 순회</td></tr>
+        </table>
+        <p class="note">전부 불가면 일반 공격이 최종 폴백. 일반 공격조차 대상 없으면 무행동 턴 종료.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p6-2" data-phase="PHASE 6 · 스킬 선택 & 쿨타임" data-title="쿨타임">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 6 · 스킬 선택 &amp; 쿨타임</span><h2>2. 쿨타임 — 부여 · 감소 · 초기</h2></div><span class="sno">P6-2</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>부여 &amp; 감소 <span class="m">— 자기 턴 기준 · 턴 종료 처리 한 곳에서만</span></h3>
+        <ul class="ls">
+          <li><b>사용 시:</b> 그 액티브에 cooldown 값 부여</li>
+          <li><b>자기 턴 종료 시:</b> <span class="wn">방금 사용한 스킬 제외</span> 나머지 액티브 −1(0에서 멈춤) — 포함하면 실효 쿨 1 감소</li>
+          <li>스킵 턴 = 사용 스킬 없음 → 전부 −1</li>
+          <li>쿨 3 = 사용 턴 제외, 자기 턴 종료 3번 후 <b>4번째 자기 턴에 재사용</b></li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>초기 쿨타임</h3>
+        <ul class="ls">
+          <li>"초기 쿨 N" = 전투 시작(챕터 진입) 시 잔여 쿨 = N</li>
+          <li><span class="wn">웨이브 전환 시 재적용 없음</span> — 잔여 쿨 유지(P9)</li>
+          <li>초기 0 → 1라운드 즉시 사용 / 초기 1 → 자기 턴 1회 후</li>
+          <li>검증: <code>initialCooldown ≤ cooldown</code></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p6-3" data-phase="PHASE 6 · 스킬 선택 & 쿨타임" data-title="패시브 트리거 시점">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 6 · 스킬 선택 &amp; 쿨타임</span><h2>3. 패시브 트리거 발동 시점</h2></div><span class="sno">P6-3</span></header>
+  <div class="body">
+    <div class="panel reveal" style="height:100%">
+      <h3>평가 위치 <span class="m">— 자기 턴 선택과 무관</span></h3>
+      <table class="tbl">
+        <tr><td>BATTLE_START</td><td>전투 초기화(챕터 진입) 시 1회</td></tr>
+        <tr><td>ROUND_START</td><td>매 라운드 시작(P4-2)</td></tr>
+        <tr><td>HP_THRESHOLD / POSITION (REALTIME)</td><td>정산 후 처리의 패시브 재평가 단계(P7-2) — 조건 진입 시 적용, 이탈 시 해제</td></tr>
+        <tr><td>ON_ATTACK_LANDED / ON_CRIT_LANDED / ON_KILL</td><td>정산 후 처리의 파생 트리거 단계(P7-2) — 해당 정산의 명중·치명·처치 결과 기준</td></tr>
+      </table>
+      <p class="note">같은 트리거가 여러 유닛에서 동시 발동하면 행동 속도 정렬 순으로 평가(결정론 보장).</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PHASE 7 — 효과 & 데미지 파이프라인
+     ============================================================ -->
+<section class="slide" data-id="p7-1" data-phase="PHASE 7 · 효과 & 데미지" data-title="정산 순서(단일)">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 7 · 효과 &amp; 데미지</span><h2>1. 단일 DAMAGE 정산 순서</h2></div><span class="sno">P7-1</span></header>
+  <div class="body">
+    <div class="cols c12">
+      <div class="panel reveal">
+        <h3>7단계 <span class="m">— 대상은 P5에서 확정된 상태로 진입</span></h3>
+        <div class="flow">
+          <div class="step"><span class="n">1</span><span class="t"><b>기본 피해</b> — atk × 계수 vs 대상 def</span></div>
+          <div class="step"><span class="n">2</span><span class="t"><b>치명 판정</b> — 유일 확률. guaranteedCrit은 RNG 미소비</span></div>
+          <div class="step"><span class="n">3</span><span class="t"><b>속성 보정</b> — 추가 배율 합 − 속성 방어 합(디버프 반영)</span></div>
+          <div class="step"><span class="n">4</span><span class="t"><b>보호 감쇄</b> — REDUCTION 곱연산 · 위치 조건 실시간 판정</span></div>
+          <div class="step"><span class="n">5</span><span class="t"><b>반올림 &amp; 하한</b> — ROUND 후 최종 1회 max(1, ·)</span></div>
+          <div class="step"><span class="n">6</span><span class="t"><b>흡혈 적립</b> — 확정 피해 × 비율(회복은 아직 미적용)</span></div>
+          <div class="step"><span class="n">7</span><span class="t"><b>HP 적용</b> — currentHp 감소, 0 클램프</span></div>
+        </div>
+      </div>
+      <div class="panel reveal">
+        <h3>곱연산 체인</h3>
+        <pre class="code">기본
+ × 치명 보정
+ × 속성 보정
+ × (보호 감쇄 곱)
+ → ROUND
+ → max(1, ·)</pre>
+        <p class="note">HEAL은 1~4 생략(치명 없음) → 회복량 산출 → 적용 → 후처리 3~5. 비피해 효과(버프·도발·면역)는 부여 즉시 후처리 3~5만.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p7-2" data-phase="PHASE 7 · 효과 & 데미지" data-title="광역 & 정산 후 처리">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 7 · 효과 &amp; 데미지</span><h2>2. 광역 처리 &amp; 정산 후 처리</h2></div><span class="sno">P7-2</span></header>
+  <div class="body">
+    <div class="cols c12">
+      <div class="panel reveal">
+        <h3>정산 후 처리 5단계 <span class="m">— 효과 하나 완료 시점 · 다음 효과 전 완결</span></h3>
+        <div class="flow">
+          <div class="step"><span class="n">1</span><span class="t"><b>사망 판정</b> — 동시 사망: 타격 시작 스냅샷으로 1~5 후 일괄 처리. "타격" 단위 = <b>효과 1회 정산</b>(다단 히트는 히트 간 사망 반영)</span></div>
+          <div class="step"><span class="n">2</span><span class="t"><b>흡혈 회복 반영</b> — 초과 버림. 시전자 사망 시 무효(적립 소멸)</span></div>
+          <div class="step"><span class="n">3</span><span class="t"><b>REALTIME 패시브 재평가</b> — <span class="wn">1패스만</span>. 연쇄는 다음 정산에서 수렴</span></div>
+          <div class="step"><span class="n">4</span><span class="t"><b>파생 트리거</b> — ON_ATTACK_LANDED·CRIT·KILL. 광역은 명중 수만큼 슬롯 순</span></div>
+          <div class="step"><span class="n">5</span><span class="t"><b>spd 변동 시 즉시 재정렬</b>(P4-3)</span></div>
+        </div>
+        <p class="note">앞 효과가 만든 사망·버프가 뒤 효과에 반영된다.</p>
+      </div>
+      <div class="panel reveal">
+        <h3>광역 처리</h3>
+        <ul class="ls sm">
+          <li>대상마다 1~5 <b>개별 수행</b>(위치·감쇄·치명 각자 판정, 슬롯 순)</li>
+          <li>6에서 흡혈 전 대상 합산 → 7 HP 일괄 적용</li>
+          <li>정산 후 처리는 광역 효과 전체에 <b>1회</b></li>
+          <li>단, 파생 트리거는 <b>명중 대상 수만큼</b> 슬롯 순 개별 발동</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p7-3" data-phase="PHASE 7 · 효과 & 데미지" data-title="데미지 공식 · 치명 · 속성">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 7 · 효과 &amp; 데미지</span><h2>3. 데미지 공식 · 치명 · 속성</h2></div><span class="sno">P7-3</span></header>
+  <div class="body">
+    <div class="cols c12">
+      <div class="panel reveal">
+        <h3>공식 <span class="m">— 구조·순서 확정 · 계수는 밸런싱 조정 대상</span></h3>
+        <pre class="code"><span class="c"># 감산율 방식 · k_def = 300 (임시)</span>
+방어 경감 = def / (def + k_def)          <span class="c"># 0~1</span>
+기본     = atk × 계수 × (1 − 방어 경감)
+
+치명 보정 = 1 + critDmg − 대상 critRes  <span class="c"># 비발동 시 1</span>
+속성 보정 = 1 + Σ(추가 배율 − elementDef) <span class="c"># 하한 0</span>
+감쇄 배율 = Π(1 − REDUCTION 값)
+
+<span class="m">최종 = max(1, ROUND(기본 × 치명 × 속성 × 감쇄))</span></pre>
+        <p class="note">ROUND = 사사오입(0.5는 0에서 먼 쪽) 고정. 연산 정밀도·항 순서(좌→우)도 클라·시뮬 동일 고정 — 재현성.</p>
+      </div>
+      <div class="panel reveal">
+        <h3>치명 &amp; 속성</h3>
+        <ul class="ls sm">
+          <li>치명 = <b>게임 내 유일 확률</b>. <code>rng.next() &lt; critRate</code>, 대상별 1회</li>
+          <li>critRes는 확률 아님 — <b>치명 피해량 상쇄</b></li>
+          <li>이벤트: 발동 CRIT / 비발동 HIT</li>
+          <li>속성 이점 = 속성 방어 디버프(별도 규칙 없음)</li>
+          <li>elementDef &gt; 배율이면 보정 &lt; 1 가능 — max(1) 하한 유지</li>
+          <li>무속성 스킬 = 보정 1(속성 방어 미적용)</li>
+          <li>2속성 = 속성별 (배율 − def) 각각 계산 후 합산</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p7-4" data-phase="PHASE 7 · 효과 & 데미지" data-title="회복 · 버프/디버프">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 7 · 효과 &amp; 데미지</span><h2>4. 회복 · 버프/디버프</h2></div><span class="sno">P7-4</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>회복</h3>
+        <ul class="ls">
+          <li>회복량 = 시전자 atk × 계수. <b>치명 없음</b>(RNG 미소비)</li>
+          <li>초과 회복 버림: <code>min(최대, current + 회복량)</code></li>
+          <li><b>흡혈:</b> 확정 피해 × lifestealRatio 적립 → 후처리 2단계에서 시전자 회복. 광역은 합산 1회. 시전자 사망 시 무효</li>
+          <li>사망자 회복 불가(부활 없음). 이벤트: HEAL</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>버프/디버프 지속</h3>
+        <ul class="ls">
+          <li>부여: 중첩 규칙으로 인스턴스 확정 → 계산 그룹으로 합산</li>
+          <li>감소: VICTIM_TURN = 대상 턴 종료 −1 / CASTER_TURN = 시전자 턴 종료 −1 → 0이면 만료(<code>STAT_MODIFIER_EXPIRED</code>)</li>
+          <li>effective는 부여/만료 <b>즉시 갱신</b>, spd 변경 시 재정렬</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p7-5" data-phase="PHASE 7 · 효과 & 데미지" data-title="도트 & 면역">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 7 · 효과 &amp; 데미지</span><h2>5. 도트 &amp; 면역</h2></div><span class="sno">P7-5</span></header>
+  <div class="body">
+    <div class="cols c12">
+      <div class="panel reveal">
+        <h3>도트 <span class="m">— 기본 중첩 SEVERAL(독립 누적·독립 만료)</span></h3>
+        <ul class="ls sm">
+          <li><b>틱 시점:</b> 대상 턴 종료 처리에서 발동(1회=1틱) 후 remaining −1</li>
+          <li><b>틱과 감소는 항상 쌍</b> — "N턴 도트 = 정확히 N틱" 불변식</li>
+          <li><span class="wn">부여 라운드 예외:</span> 대상이 이미 행동을 마쳤으면 → 그 라운드 내 <b>첫 피격 시 즉시 1틱 + remaining −1</b>. 피격 없으면 틱·감소 없음 — 다음 라운드부터 정상(틱 소실 없음, 만료만 1라운드 지연). 이 판정 시 <code>DOT_PENDING</code> 방출</li>
+          <li>틱 피해 = DAMAGE 파이프라인 재사용, <b>치명 없음</b>(RNG 미소비). 속성·감쇄 적용</li>
+          <li>해로운 효과 → 면역 차단 대상. 시전자 사망해도 유지</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>면역 <span class="m">(P2-10 요약)</span></h3>
+        <ul class="ls sm">
+          <li>category 일치 해로운 지속 효과의 <b>신규 부여 차단</b> → IMMUNITY_BLOCK</li>
+          <li>기부여 동종 도트의 <b>틱 차단</b>(잔여 감소는 진행)</li>
+          <li><span class="pk">즉발 피해·회복은 무관</span></li>
+          <li>지속은 주로 VICTIM_TURN 기준</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p7-6" data-phase="PHASE 7 · 효과 & 데미지" data-title="보호 · HP 트리거 · 동시 사망">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 7 · 효과 &amp; 데미지</span><h2>6. 보호 · HP 트리거 · 동시 사망</h2></div><span class="sno">P7-6</span></header>
+  <div class="body">
+    <div class="cols c3">
+      <div class="panel reveal">
+        <h3>보호 <span class="m">= 감쇄 + 도발</span></h3>
+        <ul class="ls sm">
+          <li><b>감쇄:</b> 위치 조건 매 피격 실시간 판정 · 곱연산 — 15%+30% → 1−(0.85×0.70) = <b>40.5%</b></li>
+          <li>보호 주체 사망 시 즉시 소멸(동시 사망은 스냅샷 적용)</li>
+          <li>중첩: 키에 시전자 포함 + OVERRIDE — 시전자 다르면 공존</li>
+          <li><code>REDUCTION_APPLIED</code> value = 감쇄 전−후 차(흡수량), source = 보호 시전자, 피격당 1회</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>HP 트리거 패시브</h3>
+        <ul class="ls sm">
+          <li>HP_THRESHOLD = REALTIME — 진입 즉시 적용, 이탈 즉시 해제. 평가는 후처리 3단계</li>
+          <li>자기 HP 패시브(각성 on/off)와 적 HP 타겟 선정은 별개 개념</li>
+          <li>경계 오르내리면 매번 적용/해제 + spd 재정렬</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>동시 사망</h3>
+        <ul class="ls sm">
+          <li>스냅샷 → 개별 피해 확정 → 일괄 사망 → 흡혈 반영 → REALTIME 재평가 → 파생 트리거 → 재정렬</li>
+          <li>보호 주체·피보호가 같은 타격에 죽어도 그 타격엔 보호 적용</li>
+          <li>"같은 타격" = 같은 <b>효과 1회 정산</b> — 다단 히트는 히트 간 사망 반영</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PHASE 8 — 몬스터 AI
+     ============================================================ -->
+<section class="slide" data-id="p8-1" data-phase="PHASE 8 · 몬스터 AI" data-title="스킬 선택 & 타겟 정책">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 8 · 몬스터 AI</span><h2>1. 스킬 선택 &amp; 타겟 정책</h2></div><span class="sno">P8-1</span></header>
+  <div class="body">
+    <div class="cols c12">
+      <div class="panel reveal">
+        <h3>AiPolicy <span class="m">— targeting.aiPolicy 오버라이드 · 도발 강제 최우선</span></h3>
+        <table class="tbl xs">
+          <tr><td>THREAT_WEIGHTED <span class="wn">(기본)</span></td><td>가중치 = 선정 시점 effective atk · 확률 = w/Σw — RNG 1회</td></tr>
+          <tr><td>RANDOM</td><td>후보 균등 추첨 — RNG 1회</td></tr>
+          <tr><td>LOWEST_HP</td><td>후보 중 HP 비율 최저(동률은 P5-5) — RNG 0회</td></tr>
+          <tr><td>BACKLINE_FIRST</td><td>후보에 뒷열 있으면 뒷열만 → THREAT_WEIGHTED — RNG 1회</td></tr>
+          <tr><td>FIXED_ROLE</td><td>meta.role(Class) 우선 → THREAT_WEIGHTED. 없으면 전체 폴백 — RNG 1회</td></tr>
+        </table>
+        <p class="note">RNG는 타겟 확정 단계 정확히 1회 · 후보 열거 슬롯 순. 결정론적 선정(후보 1명·LOWEST_HP·도발)은 RNG 미소비. 예) 고블린 도적 기습 = BACKLINE_FIRST.</p>
+      </div>
+      <div class="panel reveal">
+        <h3>스킬 선택</h3>
+        <ul class="ls sm">
+          <li>몬스터도 스킬2→1→일반 자동 선택(P6)과 발동 판정·쿨 그대로</li>
+          <li>AI는 스킬 선택을 새로 만들지 않고 <b>타겟 선정만</b> 자체 규칙</li>
+          <li>조건부 스코프·광역은 스코프가 이미 결정 → 정책 미개입</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p8-2" data-phase="PHASE 8 · 몬스터 AI" data-title="정보 비공개">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 8 · 몬스터 AI</span><h2>2. 정보 비공개</h2></div><span class="sno">P8-2</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>공개 범위</h3>
+        <table class="tbl">
+          <tr><td>공개</td><td>스킬 이름 · 효과 텍스트만</td></tr>
+          <tr><td><span class="pk">비공개</span></td><td>HP 수치 · 현재 쿨 · 다음 스킬 · 행동 순서 위치</td></tr>
+        </table>
+      </div>
+      <div class="panel reveal">
+        <h3>구현</h3>
+        <ul class="ls">
+          <li>UI는 몬스터 HP를 <b>비율 바 또는 숨김</b>으로 — 내부 상태는 이벤트 스트림에 존재, <b>렌더러가 마스킹</b></li>
+          <li>AI는 RNG 기반이라 내부적으론 결정론적 — 플레이어에겐 비공개 → 추론 게임 성립</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PHASE 9 — 웨이브 & 챕터 진행
+     ============================================================ -->
+<section class="slide" data-id="p9-1" data-phase="PHASE 9 · 웨이브 & 챕터" data-title="전투 단위">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 9 · 웨이브 &amp; 챕터</span><h2>1. 전투 단위 <b>— 챕터 진입 → 클리어/패배</b></h2></div><span class="sno">P9-1</span></header>
+  <div class="body">
+    <div class="panel reveal" style="height:100%">
+      <h3>경계 규칙</h3>
+      <table class="tbl">
+        <tr><td>RNG seed</td><td>챕터 진입 시 1회 고정 — 웨이브 전환에도 스트림 연속</td></tr>
+        <tr><td>이벤트 seq</td><td>전투 전체 연속 · 웨이브 경계에 WAVE_START / WAVE_END 방출</td></tr>
+        <tr><td>라운드 카운터</td><td><b>웨이브마다 1로 리셋</b>(라운드 = 웨이브 내부 개념)</td></tr>
+        <tr><td>BATTLE_START 트리거</td><td>챕터 진입 시 1회만</td></tr>
+        <tr><td>initialCooldown</td><td>챕터 진입 시 1회만 적용(웨이브 전환 시 잔여 쿨 유지)</td></tr>
+        <tr><td>ROUND 기준 지속 효과</td><td>유지분은 remaining 이월, 새 웨이브 라운드 종료마다 −1</td></tr>
+        <tr><td>패배 재시작</td><td>새 전투 = 새 seed 파생</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p9-2" data-phase="PHASE 9 · 웨이브 & 챕터" data-title="웨이브 · 챕터 · 패배">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 9 · 웨이브 &amp; 챕터</span><h2>2. 웨이브 전환 · 챕터 완료 · 패배</h2></div><span class="sno">P9-2</span></header>
+  <div class="body">
+    <div class="cols c12">
+      <div class="panel reveal">
+        <h3>웨이브 전환 <span class="m">— 적 전멸 시 자동(확인 버튼 없음)</span></h3>
+        <table class="tbl xs">
+          <tr><td>아군 HP</td><td><b>유지</b>(회복 없음)</td></tr>
+          <tr><td>사망 캐릭터</td><td><b>유지</b>(부활 없음)</td></tr>
+          <tr><td>스킬 쿨타임</td><td><b>유지</b>(초기화 없음)</td></tr>
+          <tr><td>편성·배치</td><td>변경 불가</td></tr>
+          <tr><td>지속 효과</td><td><b>시전자 진영 기준</b> — ENEMY 시전 효과 전부 제거, ALLY 시전 효과 전부 유지(유불리 무관)</td></tr>
+        </table>
+        <p class="note">웨이브 = 독립 적 덱. 몬스터는 웨이브 경계를 넘지 않는다(HP·상태 승계 없음).</p>
+      </div>
+      <div class="panel reveal">
+        <h3>챕터 완료 &amp; 패배</h3>
+        <ul class="ls sm">
+          <li><b>완료:</b> HP·쿨 전부 회복, 사망 캐릭터 복귀 — 챕터 단위 독립. 다음 챕터 풀 상태</li>
+          <li><b>패배:</b> 페널티 없음. 1웨이브부터 재시작, 편성 화면 재노출(마지막 설정 유지). 클리어 전 스토리 미진행</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p9-3" data-phase="PHASE 9 · 웨이브 & 챕터" data-title="데이터 구조">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 9 · 웨이브 &amp; 챕터</span><h2>3. 데이터 구조 <b>— 24챕터 × 1~N웨이브</b></h2></div><span class="sno">P9-3</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>ChapterDef / WaveDef</h3>
+        <table class="tbl">
+          <tr><td>ChapterDef</td><td>id · waves[] (길이 = 웨이브 수, 챕터별 자유)</td></tr>
+          <tr><td>WaveDef</td><td>id · enemyDeck[] = {unitId, slot}</td></tr>
+        </table>
+      </div>
+      <div class="panel reveal">
+        <h3>규칙</h3>
+        <ul class="ls">
+          <li>회차 반복 재플레이 가능</li>
+          <li>편성 UI는 전투 진입 전 <b>매번 노출</b>(P12)</li>
+          <li>적 덱도 편성 검증(P3-1) 동일 규칙으로 데이터 검증</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PHASE 10 — 전투 종료 판정
+     ============================================================ -->
+<section class="slide" data-id="p10-1" data-phase="PHASE 10 · 전투 종료 판정" data-title="전멸 감지 & 결과">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 10 · 전투 종료 판정</span><h2>1. 전멸 감지 &amp; 결과 처리</h2></div><span class="sno">P10-1</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>진영 전멸 감지 <span class="m">— 훅: 매 효과 정산 후(사망 판정 직후)</span></h3>
+        <ul class="ls">
+          <li>한쪽 생존 0 → <b>현재 효과의 정산(후처리 포함)까지만 완결</b>, 타임라인의 남은 효과는 실행하지 않고 즉시 루프 탈출</li>
+          <li><b>양측 동시 전멸</b>(광역으로 마지막 아군·적 동시 사망): <span class="wn">무승부 → 패배와 동일 처리(재시작)</span> — 클리어 처리하면 전멸 아군으로 다음 웨이브를 맞는 부조리</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>결과 처리</h3>
+        <table class="tbl">
+          <tr><td>승리</td><td>다음 웨이브 있으면 전환, 없으면 챕터 완료 · BATTLE_END(win)</td></tr>
+          <tr><td>패배</td><td>패배 처리(P9-2) · BATTLE_END(lose)</td></tr>
+        </table>
+        <p class="note">결과 = 이벤트 스트림의 종결점 → 기여도 분석·리플레이 마감.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PHASE 11 — 시뮬레이터
+     ============================================================ -->
+<section class="slide" data-id="p11-1" data-phase="PHASE 11 · 시뮬레이터" data-title="헤드리스 & 로그">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 11 · 시뮬레이터</span><h2>1. 헤드리스 실행 &amp; 로그 <b>— Phase 12(UI)보다 먼저</b></h2></div><span class="sno">P11-1</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>헤드리스 전투</h3>
+        <ul class="ls">
+          <li>Unity·렌더링 없이 순수 데이터만으로 전투 1판 완주</li>
+          <li><b>입력:</b> 아군 편성·배치 + 적 덱(웨이브) + 명시 seed</li>
+          <li>연출 전면 스킵 — 타임라인은 <code>at</code> 순서만 사용(대기 없음)</li>
+          <li><b>출력:</b> 승패·최종 상태 + 이벤트 스트림</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>로그 포맷</h3>
+        <ul class="ls">
+          <li><b>로그 = 이벤트 스트림 직렬화.</b> 별도 로그 로직 없음</li>
+          <li>라운드/턴 경계·효과 적용·치명/사망/회복이 seq 순으로 재구성 → 리플레이·디버깅 그대로 사용</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p11-2" data-phase="PHASE 11 · 시뮬레이터" data-title="기여도 & 배치 반복">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 11 · 시뮬레이터</span><h2>2. 기여도 분석 &amp; 배치 반복</h2></div><span class="sno">P11-2</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>기여도 <span class="m">— 스트림 구독·집계만</span></h3>
+        <table class="tbl">
+          <tr><td>딜</td><td>시전자별 HIT · CRIT · DOT_TICK value 합</td></tr>
+          <tr><td>탱</td><td>REDUCTION_APPLIED 흡수량 합 + 도발 유효 중 도발자가 받은 단일 공격 피해 합(강제 타겟 이벤트에 도발 효과 id 마킹)</td></tr>
+          <tr><td>힐</td><td>HEAL value 합(흡혈 포함)</td></tr>
+        </table>
+      </div>
+      <div class="panel reveal">
+        <h3>배치 반복 &amp; 통계</h3>
+        <ul class="ls">
+          <li>동일 조합을 <b>seed만 바꿔 N회</b> → 승률·평균 라운드·생존 수·기여도 분포</li>
+          <li>분산의 원천 = 치명 RNG + AI 추첨뿐 → 밸런싱 민감도 측정에 적합</li>
+          <li>계수·쿨·행동 속도 스윕으로 승률 곡선 산출이 목적</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PHASE 12 — UI/UX
+     ============================================================ -->
+<section class="slide" data-id="p12-1" data-phase="PHASE 12 · UI/UX" data-title="편성 · 전투 화면 · 타겟">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 12 · UI/UX</span><h2>1. 편성 · 전투 화면 · 타겟 선택</h2></div><span class="sno">P12-1</span></header>
+  <div class="body">
+    <div class="cols c3">
+      <div class="panel reveal">
+        <h3>편성 UI</h3>
+        <ul class="ls sm">
+          <li>전투 진입 전 매번 노출</li>
+          <li>1~5명 선택 + 2×3 배치 · <b>마지막 설정 유지</b></li>
+          <li>편성 검증(P3-1) 위반 시 진입 차단</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>전투 화면</h3>
+        <ul class="ls sm">
+          <li>양 진영 그리드(빈 칸 포함) · 턴 순서(아군만 정확, 적은 마스킹)</li>
+          <li>아군 HP 수치 / <b>적 HP는 비율 바 또는 숨김</b></li>
+          <li>상태 아이콘 = 효과 인스턴스 수명 종속 · STACK/SEVERAL 수 뱃지</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>타겟 선택</h3>
+        <ul class="ls sm">
+          <li>발동 가능한 스킬 버튼만 활성(불가 시 비활성 + 사유)</li>
+          <li>스킬 선택 → 후보 하이라이트 → 탭으로 대상 선택</li>
+          <li>강제(도발)면 후보 1개로 표시 · 광역은 범위 프리뷰</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-id="p12-2" data-phase="PHASE 12 · UI/UX" data-title="연출 · 배속 · 로그">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <header class="shead"><div><span class="ptag">PHASE 12 · UI/UX</span><h2>2. 연출 재생 · 배속 · 로그/결과</h2></div><span class="sno">P12-2</span></header>
+  <div class="body">
+    <div class="cols c2">
+      <div class="panel reveal">
+        <h3>연출 재생 &amp; 배속 <span class="m">— 배속 O / 스킵 X / 자동 X</span></h3>
+        <ul class="ls">
+          <li>UI는 <b>상태 렌더 + 입력 전달만</b> — 결과를 계산하지 않는다</li>
+          <li>타임라인 + 연출 큐 재생. 배속은 재생 속도만 스케일 — 정산 순서·결과 불변</li>
+          <li>스킵 없음 → 큐는 반드시 재생하되 빨리 감기 가능</li>
+        </ul>
+      </div>
+      <div class="panel reveal">
+        <h3>로그 / 결과 화면</h3>
+        <ul class="ls">
+          <li>이벤트 스트림을 사람이 읽는 형태로 표시</li>
+          <li>도트 발동 대기(<code>DOT_PENDING</code>)는 <b>"대기 중"으로 구분 표기</b></li>
+          <li>종료 시 승패 + 기여도 요약(딜/탱/힐)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+</div>
+
+<!-- ===== 덱 크롬: HUD 바 · 진행바 · TOC 드로어 · 댓글 패널 ===== -->
+<div class="progress" id="progress"></div>
+<div class="hudbar">
+  <span class="ph" id="hudPhase">COVER</span><span id="hudTitle"></span>
+  <span class="spacer"></span>
+  <button id="btnToc" title="목차 (T)">☰ TOC</button>
+  <button id="btnCmt" title="댓글 (C)">💬 댓글</button>
+  <span id="hudPage">1 / 1</span>
+</div>
+<div class="dim-overlay" id="dim"></div>
+<aside class="drawer" id="drawer" aria-label="목차 드로어"><h5>NAVIGATION</h5><div id="drawerList"></div></aside>
+<aside class="cpanel" id="cpanel" aria-label="댓글 패널">
+  <div class="chead"><div class="ct">DISCUSSION — 슬라이드별 스레드</div><div class="cs" id="cmtSlide">—</div></div>
+  <div class="cbody" id="cmtBody"></div>
+</aside>
+<div class="edit-hotzone" id="editHotzone"></div>
+<button class="edit-toggle" id="editToggle" title="편집 모드 (E)">✏️</button>
+
+<script>
+/* ============================================================
+   개정 이력 — 스펙이 바뀌면 여기에 행 추가 (최신이 위)
+   ============================================================ */
+const REVISIONS = [
+  { date:'2026-07-02', ver:'v1.0', scope:'전체', note:'초판 작성 — Phase 1~12 전체 스펙 슬라이드화' },
+];
+
+/* ============================================================
+   giscus 설정 — https://giscus.app 에서 저장소 연결 후 값 채우기
+   저장소 공개 + Discussions 활성화 + giscus 앱 설치 필요.
+   repo가 비어 있으면 댓글 패널에 설정 안내가 표시된다.
+   ============================================================ */
+const GISCUS = {
+  repo: '',            // 예: 'team/star-echo-docs'
+  repoId: '',
+  category: 'Announcements',
+  categoryId: '',
+};
+
+/* ============================================================
+   TOC — 표지 그리드와 드로어를 모두 이 데이터로 렌더
+   ============================================================ */
+const TOC = [
+  { phase:'DOC', title:'문서', items:[ ['history','개정 이력'], ['overview','전제 · 용어 · 구현 순서'] ]},
+  { phase:'P1', title:'기반 런타임', items:[ ['p1-1','RNG 시드 스트림'], ['p1-2','이벤트 버스 & 로그'] ]},
+  { phase:'P2', title:'데이터 스키마', items:[
+    ['p2-1','스탯'], ['p2-2','계산 그룹'], ['p2-3','속성 & StatKey'], ['p2-4','클래스 & 유닛 데이터'],
+    ['p2-5','스킬 데이터'], ['p2-6','효과 데이터'], ['p2-7','효과 타입 & 허용 스코프'], ['p2-8','트리거 & 존속'],
+    ['p2-9','중첩 규칙'], ['p2-10','면역 카테고리'], ['p2-11','데이터 검증'], ['p2-12','스킬 타임라인'],
+    ['p2-13','연출 처리'], ['p2-14','데이터 저작 & 관리'], ['p2-15','스킬 데이터 예시'] ]},
+  { phase:'P3', title:'전투 상태 & 그리드', items:[ ['p3-1','그리드 & 초기화'], ['p3-2','런타임 유닛 상태'], ['p3-3','앞열 판정 & 인접 쿼리'] ]},
+  { phase:'P4', title:'턴 엔진', items:[ ['p4-1','정렬 & 동률 처리'], ['p4-2','턴 큐 · 라운드 루프'], ['p4-3','즉시 재정렬'], ['p4-4','행동 불가 & 종료 처리'] ]},
+  { phase:'P5', title:'타겟팅', items:[ ['p5-1','TargetScope'], ['p5-2','주 대상 선정'], ['p5-3','앞열 · 뒷열 · 광역'], ['p5-4','도발 강제'], ['p5-5','조건부 · 입력 · 불발'] ]},
+  { phase:'P6', title:'스킬 선택 & 쿨타임', items:[ ['p6-1','발동 판정 & 선택 주체'], ['p6-2','쿨타임'], ['p6-3','패시브 트리거 시점'] ]},
+  { phase:'P7', title:'효과 & 데미지', items:[ ['p7-1','정산 순서(단일)'], ['p7-2','광역 & 정산 후 처리'], ['p7-3','데미지 공식 · 치명 · 속성'], ['p7-4','회복 · 버프/디버프'], ['p7-5','도트 & 면역'], ['p7-6','보호 · HP 트리거 · 동시 사망'] ]},
+  { phase:'P8', title:'몬스터 AI', items:[ ['p8-1','스킬 선택 & 타겟 정책'], ['p8-2','정보 비공개'] ]},
+  { phase:'P9', title:'웨이브 & 챕터', items:[ ['p9-1','전투 단위'], ['p9-2','웨이브 · 챕터 · 패배'], ['p9-3','데이터 구조'] ]},
+  { phase:'P10', title:'전투 종료 판정', items:[ ['p10-1','전멸 감지 & 결과'] ]},
+  { phase:'P11', title:'시뮬레이터', items:[ ['p11-1','헤드리스 & 로그'], ['p11-2','기여도 & 배치 반복'] ]},
+  { phase:'P12', title:'UI/UX', items:[ ['p12-1','편성 · 전투 화면 · 타겟'], ['p12-2','연출 · 배속 · 로그'] ]},
+];
+
+/* ============================================================
+   슬라이드 컨트롤러 — 스테이지 스케일 · 내비 · 해시 딥링크
+   ============================================================ */
+class Deck {
+  constructor(){
+    this.slides=[...document.querySelectorAll('.slide')];
+    this.byId={}; this.slides.forEach((s,i)=>this.byId[s.dataset.id]=i);
+    this.cur=0; this.stage=document.getElementById('deckStage');
+    this.scale(); addEventListener('resize',()=>this.scale());
+    this.keys(); this.touch(); this.wheel();
+    const h=location.hash.slice(1);
+    this.show(this.byId[h]!==undefined?this.byId[h]:0,true);
+  }
+  scale(){
+    const f=Math.min(innerWidth/1920,(innerHeight-44)/1080);
+    const x=(innerWidth-1920*f)/2, y=((innerHeight-44)-1080*f)/2;
+    this.stage.style.transform=`translate(${x}px,${y}px) scale(${f})`;
+  }
+  show(i,silent){
+    this.cur=Math.max(0,Math.min(i,this.slides.length-1));
+    this.slides.forEach((s,k)=>{s.classList.toggle('active',k===this.cur);s.classList.toggle('visible',k===this.cur)});
+    const s=this.slides[this.cur];
+    if(!silent) history.replaceState(null,'','#'+s.dataset.id);
+    document.getElementById('hudPhase').textContent=s.dataset.phase;
+    document.getElementById('hudTitle').textContent=' · '+s.dataset.title;
+    document.getElementById('hudPage').textContent=(this.cur+1)+' / '+this.slides.length;
+    document.getElementById('progress').style.width=(100*(this.cur+1)/this.slides.length)+'%';
+    document.querySelectorAll('#drawerList a').forEach(a=>a.classList.toggle('cur',a.dataset.id===s.dataset.id));
+    if(cmtOpen) loadGiscus(s.dataset.id,s.dataset.title);
+  }
+  go(id){ if(this.byId[id]!==undefined) this.show(this.byId[id]); }
+  next(){ this.show(this.cur+1) } prev(){ this.show(this.cur-1) }
+  keys(){
+    addEventListener('keydown',e=>{
+      if(e.target.getAttribute&&e.target.getAttribute('contenteditable'))return;
+      if(['ArrowRight','PageDown',' '].includes(e.key)){e.preventDefault();this.next()}
+      else if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();this.prev()}
+      else if(e.key==='Home')this.show(0);
+      else if(e.key==='End')this.show(this.slides.length-1);
+      else if(e.key==='t'||e.key==='T')toggleDrawer();
+      else if(e.key==='c'||e.key==='C')toggleCmt();
+      else if(e.key==='Escape'){closeDrawer();closeCmt()}
+    });
+  }
+  touch(){
+    let sx=0; addEventListener('touchstart',e=>sx=e.touches[0].clientX,{passive:true});
+    addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-sx;
+      if(Math.abs(dx)>60){dx<0?this.next():this.prev()}},{passive:true});
+  }
+  /* 마우스 휠 이동 — 드로어·댓글 패널 위에서는 스크롤 우선 */
+  wheel(){
+    let lock=0;
+    addEventListener('wheel',e=>{
+      if(drawerOpen||cmtOpen)return;                       // 패널 열림 = 패널 스크롤 우선
+      if(e.target.closest&&e.target.closest('.drawer,.cpanel'))return;
+      const now=Date.now(); if(now-lock<450)return;        // 트랙패드 관성 스로틀
+      if(Math.abs(e.deltaY)<12)return;                     // 미세 스크롤 무시
+      lock=now; e.deltaY>0?this.next():this.prev();
+    },{passive:true});
+  }
+}
+
+/* ===== TOC 렌더 (표지 그리드 + 드로어) ===== */
+function renderToc(){
+  const grid=document.getElementById('tocGrid'), dl=document.getElementById('drawerList');
+  TOC.forEach(ph=>{
+    const card=document.createElement('div');card.className='toc-ph';
+    const h=document.createElement('h4');h.textContent=ph.phase+' — '+ph.title;
+    h.onclick=()=>deck.go(ph.items[0][0]);card.appendChild(h);
+    ph.items.forEach(([id,t],i)=>{const a=document.createElement('a');a.href='#'+id;a.textContent=(i+1)+'. '+t;
+      a.onclick=e=>{e.preventDefault();deck.go(id)};card.appendChild(a)});
+    grid.appendChild(card);
+    const dp=document.createElement('div');dp.className='dph';
+    const sp=document.createElement('span');sp.textContent=ph.phase+' — '+ph.title;
+    sp.onclick=()=>{deck.go(ph.items[0][0]);closeDrawer()};dp.appendChild(sp);
+    ph.items.forEach(([id,t])=>{const a=document.createElement('a');a.href='#'+id;a.dataset.id=id;a.textContent=t;
+      a.onclick=e=>{e.preventDefault();deck.go(id);closeDrawer()};dp.appendChild(a)});
+    dl.appendChild(dp);
+  });
+}
+
+/* ===== 개정 이력 렌더 ===== */
+function renderRevisions(){
+  const tb=document.querySelector('#revTable tbody');
+  REVISIONS.forEach(r=>{const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${r.date}</td><td>${r.ver}</td><td style="font-family:var(--font-body);color:var(--text)">${r.scope}</td><td>${r.note}</td>`;
+    tb.appendChild(tr)});
+  if(REVISIONS[0])document.getElementById('covRev').textContent=REVISIONS[0].ver+' ('+REVISIONS[0].date+')';
+}
+
+/* ===== 드로어 / 댓글 패널 ===== */
+let drawerOpen=false,cmtOpen=false;
+const dim=document.getElementById('dim');
+function toggleDrawer(){drawerOpen?closeDrawer():openDrawer()}
+function openDrawer(){closeCmt();drawerOpen=true;document.getElementById('drawer').classList.add('open');dim.classList.add('show')}
+function closeDrawer(){drawerOpen=false;document.getElementById('drawer').classList.remove('open');if(!cmtOpen)dim.classList.remove('show')}
+function toggleCmt(){cmtOpen?closeCmt():openCmt()}
+function openCmt(){closeDrawer();cmtOpen=true;document.getElementById('cpanel').classList.add('open');dim.classList.add('show');
+  const s=deck.slides[deck.cur];loadGiscus(s.dataset.id,s.dataset.title)}
+function closeCmt(){cmtOpen=false;document.getElementById('cpanel').classList.remove('open');if(!drawerOpen)dim.classList.remove('show')}
+dim.onclick=()=>{closeDrawer();closeCmt()};
+document.getElementById('btnToc').onclick=toggleDrawer;
+document.getElementById('btnCmt').onclick=toggleCmt;
+
+/* ===== giscus — 슬라이드별 스레드(data-mapping: specific, term = 슬라이드 id) ===== */
+function loadGiscus(slideId,title){
+  document.getElementById('cmtSlide').textContent='#'+slideId+' · '+title;
+  const body=document.getElementById('cmtBody');body.innerHTML='';
+  if(!GISCUS.repo){
+    body.innerHTML=`<div class="setup"><b>giscus 미설정</b><br><br>
+      1. 문서 저장소를 <b>공개(public)</b>로 두고 Settings → Discussions 활성화<br>
+      2. <code>github.com/apps/giscus</code> 앱을 저장소에 설치<br>
+      3. <code>giscus.app</code> 에서 저장소 입력 → repo·repoId·category·categoryId 발급<br>
+      4. 이 파일 스크립트 상단 <code>GISCUS</code> 객체에 값 입력<br><br>
+      설정 후: 슬라이드마다 독립 Discussions 스레드가 생성되고, 팀원이 GitHub 계정으로 질문·답변 가능.</div>`;
+    return;
+  }
+  const s=document.createElement('script');
+  s.src='https://giscus.app/client.js';
+  s.setAttribute('data-repo',GISCUS.repo);
+  s.setAttribute('data-repo-id',GISCUS.repoId);
+  s.setAttribute('data-category',GISCUS.category);
+  s.setAttribute('data-category-id',GISCUS.categoryId);
+  s.setAttribute('data-mapping','specific');
+  s.setAttribute('data-term','combat-spec/'+slideId);
+  s.setAttribute('data-strict','0');
+  s.setAttribute('data-reactions-enabled','1');
+  s.setAttribute('data-input-position','top');
+  s.setAttribute('data-theme','transparent_dark');
+  s.setAttribute('data-lang','ko');
+  s.crossOrigin='anonymous'; s.async=true;
+  body.appendChild(s);
+}
+
+/* ===== 인라인 편집 (E 키 / 좌상단 핫존) — localStorage 저장 ===== */
+const editToggle=document.getElementById('editToggle'),hotzone=document.getElementById('editHotzone');
+let editing=false,hideT=null;
+function setEdit(on){editing=on;document.body.classList.toggle('editing',on);editToggle.classList.toggle('active',on);
+  document.querySelectorAll('.slide [data-edit]').forEach(el=>el.contentEditable=on)}
+function toggleEdit(){setEdit(!editing);if(!editing)saveEdits()}
+function saveEdits(){const d={};document.querySelectorAll('[data-edit]').forEach(el=>d[el.dataset.edit]=el.innerHTML);
+  localStorage.setItem('spec-slides-edits',JSON.stringify(d))}
+function loadEdits(){try{const d=JSON.parse(localStorage.getItem('spec-slides-edits')||'{}');
+  document.querySelectorAll('[data-edit]').forEach(el=>{if(d[el.dataset.edit])el.innerHTML=d[el.dataset.edit]})}catch(e){}}
+editToggle.onclick=toggleEdit; hotzone.onclick=toggleEdit;
+hotzone.onmouseenter=()=>{clearTimeout(hideT);editToggle.classList.add('show')};
+hotzone.onmouseleave=()=>{hideT=setTimeout(()=>{if(!editing)editToggle.classList.remove('show')},400)};
+editToggle.onmouseenter=()=>clearTimeout(hideT);
+editToggle.onmouseleave=()=>{hideT=setTimeout(()=>{if(!editing)editToggle.classList.remove('show')},400)};
+addEventListener('keydown',e=>{if((e.key==='e'||e.key==='E')&&!(e.target.getAttribute&&e.target.getAttribute('contenteditable')))toggleEdit();
+  if((e.ctrlKey||e.metaKey)&&e.key==='s'&&editing){e.preventDefault();saveEdits()}});
+
+/* ===== 부팅 ===== */
+const deck=new Deck();
+renderToc(); renderRevisions(); loadEdits();
+addEventListener('hashchange',()=>{const id=location.hash.slice(1);if(deck.byId[id]!==undefined)deck.show(deck.byId[id],true)});
+</script>
+</body>
+</html>
