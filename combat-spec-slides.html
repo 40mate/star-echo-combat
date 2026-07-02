@@ -1741,10 +1741,10 @@ const REVISIONS = [
    repo가 비어 있으면 댓글 패널에 설정 안내가 표시된다.
    ============================================================ */
 const GISCUS = {
-  repo: '',            // 예: 'team/star-echo-docs'
-  repoId: '',
+  repo: '40mate/star-echo-combat',
+  repoId: 'R_kgDOSdWzWg',
   category: 'Announcements',
-  categoryId: '',
+  categoryId: 'DIC_kwDOSdWzWs4DAW_q',
 };
 
 /* ============================================================
@@ -1878,13 +1878,13 @@ document.getElementById('btnCmt').onclick=toggleCmt;
 function loadGiscus(slideId,title){
   document.getElementById('cmtSlide').textContent='#'+slideId+' · '+title;
   const body=document.getElementById('cmtBody');body.innerHTML='';
-  if(!GISCUS.repo){
-    body.innerHTML=`<div class="setup"><b>giscus 미설정</b><br><br>
-      1. 문서 저장소를 <b>공개(public)</b>로 두고 Settings → Discussions 활성화<br>
-      2. <code>github.com/apps/giscus</code> 앱을 저장소에 설치<br>
-      3. <code>giscus.app</code> 에서 저장소 입력 → repo·repoId·category·categoryId 발급<br>
-      4. 이 파일 스크립트 상단 <code>GISCUS</code> 객체에 값 입력<br><br>
-      설정 후: 슬라이드마다 독립 Discussions 스레드가 생성되고, 팀원이 GitHub 계정으로 질문·답변 가능.</div>`;
+  if(!GISCUS.repo||!GISCUS.repoId||!GISCUS.categoryId){
+    body.innerHTML=`<div class="setup"><b>giscus 설정 마무리 필요</b><br><br>
+      1. <code>github.com/40mate/star-echo-combat</code> → Settings → General → Features → <b>Discussions 체크</b><br>
+      2. <code>github.com/apps/giscus</code> → Install → star-echo-combat 선택<br>
+      3. <code>giscus.app</code> 에서 저장소 입력 → <b>categoryId</b> 복사<br>
+      4. 이 파일 스크립트 상단 <code>GISCUS.categoryId</code>에 입력<br><br>
+      완료 후: 슬라이드마다 독립 Discussions 스레드가 생성되고, 팀원이 GitHub 계정으로 질문·답변 가능.</div>`;
     return;
   }
   const s=document.createElement('script');
